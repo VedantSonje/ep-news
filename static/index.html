@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EP News AI</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --accent:    #238636;
+      --accent2:   #1f6feb;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --user-bg:   #1f6feb1a;
+      --bot-bg:    #161b22;
+      --tag-bg:    #21262d;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px; line-height: 1.6; }
+
+    /* ── Layout ── */
+    .layout { display: flex; height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 256px; min-width: 256px;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      padding: 18px 12px; gap: 16px; overflow-y: auto;
+    }
+    .logo { display: flex; align-items: center; gap: 10px;
+      padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+    .logo-icon { width: 34px; height: 34px;
+      background: linear-gradient(135deg, #238636, #1f6feb);
+      border-radius: 8px; display: flex; align-items: center;
+      justify-content: center; font-size: 18px; }
+    .logo-text { font-weight: 700; font-size: 15px; }
+    .logo-sub  { font-size: 11px; color: var(--muted); }
+
+    .section-title { font-size: 11px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+
+    .chip { display: block; width: 100%; text-align: left;
+      background: var(--tag-bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; color: var(--text);
+      font-size: 12.5px; cursor: pointer; margin-bottom: 5px;
+      transition: background .15s, border-color .15s; }
+    .chip:hover { background: #1c2128; border-color: var(--accent2); color: #79c0ff; }
+
+    .stats-box { background: var(--tag-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px; }
+    .stats-row { display: flex; justify-content: space-between;
+      font-size: 12px; padding: 3px 0; color: var(--muted); }
+    .stats-row span:last-child { color: var(--text); font-weight: 600; }
+
+    .clear-btn { display: block; width: 100%; background: transparent;
+      border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+      color: var(--muted); font-size: 12px; cursor: pointer;
+      transition: border-color .15s, color .15s; margin-top: auto; }
+    .clear-btn:hover { border-color: #f85149; color: #f85149; }
+
+    /* ── Chat main ── */
+    .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+
+    .chat-header { padding: 12px 20px; border-bottom: 1px solid var(--border);
+      font-size: 12.5px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; }
+
+    .messages { flex: 1; overflow-y: auto; padding: 24px 20px;
+      display: flex; flex-direction: column; gap: 18px; }
+
+    .msg { display: flex; gap: 12px; max-width: 860px; width: 100%; }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .msg.bot  { align-self: flex-start; }
+
+    .avatar { width: 30px; height: 30px; min-width: 30px;
+      border-radius: 8px; display: flex; align-items: center;
+      justify-content: center; font-size: 13px; font-weight: 700; }
+    .msg.user .avatar { background: var(--accent2); }
+    .msg.bot  .avatar { background: linear-gradient(135deg,#238636,#1f6feb); }
+
+    .bubble { padding: 11px 15px; border-radius: 10px;
+      line-height: 1.65; word-break: break-word;
+      max-width: calc(100% - 44px); }
+    .msg.user .bubble { background: var(--user-bg);
+      border: 1px solid #1f6feb33; color: #cdd9e5;
+      border-radius: 10px 2px 10px 10px; }
+    .msg.bot  .bubble { background: var(--bot-bg);
+      border: 1px solid var(--border);
+      border-radius: 2px 10px 10px 10px; }
+
+    /* Markdown in bubble */
+    .bubble h1,.bubble h2,.bubble h3 { margin: 10px 0 4px; }
+    .bubble p   { margin: 4px 0; }
+    .bubble hr  { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+    .bubble strong { color: #e6edf3; }
+    .bubble em     { color: var(--muted); }
+    .bubble small  { color: var(--muted); font-size: 11px; }
+    .bubble ul,.bubble ol { padding-left: 18px; margin: 4px 0; }
+    .bubble li  { margin: 2px 0; }
+    .bubble code { background: var(--tag-bg); padding: 1px 5px;
+      border-radius: 3px; font-size: 12px; }
+    .bubble pre  { background: var(--tag-bg); padding: 10px;
+      border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+    .bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+    .bubble th,.bubble td { padding: 6px 10px; border: 1px solid var(--border);
+      text-align: left; }
+    .bubble th { background: var(--tag-bg); font-weight: 600; }
+    .bubble tr:hover td { background: #1c2128; }
+    .bubble a   { color: #79c0ff; text-decoration: none; }
+    .bubble a:hover { text-decoration: underline; }
+
+    /* Cursor blink while streaming */
+    .streaming-cursor::after {
+      content: '▊'; animation: blink .8s step-end infinite; color: var(--accent2);
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* Typing dots */
+    .typing { display: flex; gap: 4px; align-items: center; padding: 6px 0; }
+    .typing span { width: 7px; height: 7px; border-radius: 50%;
+      background: var(--muted); animation: bounce 1.2s infinite ease-in-out; }
+    .typing span:nth-child(2) { animation-delay: .2s; }
+    .typing span:nth-child(3) { animation-delay: .4s; }
+    @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+
+    /* Intent badge */
+    .badge { display: inline-block; font-size: 10px; padding: 2px 8px;
+      border-radius: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .05em; margin-bottom: 8px; }
+    .badge-order_win     { background: #238636; color: #fff; }
+    .badge-financials    { background: #1f6feb; color: #fff; }
+    .badge-announcements { background: #9333ea; color: #fff; }
+    .badge-all           { background: #f59e0b; color: #000; }
+
+    /* Web search indicator */
+    .web-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 10px; padding: 2px 8px; border-radius: 10px;
+      background: #0d9488; color: #fff; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em;
+      margin-left: 6px; margin-bottom: 8px;
+    }
+    .web-badge .spin {
+      display: inline-block; width: 10px; height: 10px;
+      border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .web-badge.done .spin { display: none; }
+
+    /* Welcome */
+    .welcome { text-align: center; margin: auto; padding: 40px 20px; }
+    .welcome h2 { font-size: 22px; margin-bottom: 8px; }
+    .welcome p  { color: var(--muted); max-width: 460px; margin: 0 auto; }
+
+    /* Input area */
+    .input-area { padding: 14px 20px; border-top: 1px solid var(--border);
+      background: var(--surface); }
+    .input-row { display: flex; gap: 10px; align-items: flex-end; }
+    #msg-input { flex: 1; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 14px; color: var(--text); font-size: 14px;
+      resize: none; min-height: 42px; max-height: 140px;
+      outline: none; transition: border-color .15s; font-family: inherit; }
+    #msg-input:focus { border-color: var(--accent2); }
+    #msg-input::placeholder { color: var(--muted); }
+    #send-btn { background: var(--accent2); border: none; border-radius: 8px;
+      padding: 10px 18px; color: white; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: opacity .15s; height: 42px; white-space: nowrap; }
+    #send-btn:hover   { opacity: .85; }
+    #send-btn:disabled { opacity: .4; cursor: not-allowed; }
+    .hint { margin-top: 5px; font-size: 11px; color: var(--muted); }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Power Prompts ── */
+    .prompt-tag {
+      display: flex; align-items: center; gap: 7px;
+      width: 100%; text-align: left;
+      background: var(--tag-bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 10px; color: var(--text);
+      font-size: 12px; cursor: pointer; margin-bottom: 4px;
+      transition: background .15s, border-color .15s;
+    }
+    .prompt-tag:hover { background: #1c2128; border-color: #9333ea; color: #c084fc; }
+    .prompt-tag .ptag-icon { font-size: 14px; flex-shrink: 0; }
+    .prompt-tag .ptag-label { font-weight: 600; flex: 1; line-height: 1.3; }
+    .prompt-tag .ptag-arrow { color: var(--muted); font-size: 10px; flex-shrink: 0; }
+
+    /* ── Tab nav ── */
+    .tab-nav {
+      display: flex; gap: 2px;
+      padding: 10px 16px 0; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .tab-btn {
+      padding: 8px 18px; border: none; border-radius: 6px 6px 0 0;
+      background: transparent; color: var(--muted); font-size: 13px;
+      font-weight: 600; cursor: pointer; letter-spacing: .02em;
+      border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s;
+    }
+    .tab-btn.active { color: var(--text); border-bottom-color: var(--accent2); }
+    .tab-btn:hover:not(.active) { color: var(--text); }
+
+    /* ── Compare view ── */
+    #compare-view {
+      flex: 1; display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .cmp-controls {
+      padding: 16px 20px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    }
+    .cmp-controls label { font-size: 12px; color: var(--muted); font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em; }
+    .cmp-input-wrap { position: relative; flex: 1; min-width: 200px; max-width: 380px; }
+    #symbol-input {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: 8px 12px 8px 34px; color: var(--text);
+      font-size: 13px; outline: none; transition: border-color .15s; font-family: inherit;
+    }
+    #symbol-input:focus { border-color: var(--accent2); }
+    .cmp-search-icon {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--muted); font-size: 14px; pointer-events: none;
+    }
+    #load-btn {
+      background: var(--accent2); border: none; border-radius: 7px;
+      padding: 8px 20px; color: white; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: opacity .15s; white-space: nowrap;
+    }
+    #load-btn:hover { opacity: .85; }
+    #load-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .cmp-body { flex: 1; overflow-y: auto; padding: 20px; }
+
+    .cmp-empty {
+      text-align: center; color: var(--muted); margin-top: 60px;
+      font-size: 14px; line-height: 2;
+    }
+    .cmp-empty .cmp-icon { font-size: 40px; display: block; margin-bottom: 12px; }
+
+    .cmp-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden;
+    }
+    .cmp-card-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 8px;
+    }
+    .cmp-title { font-size: 16px; font-weight: 700; }
+    .cmp-title span { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 6px; }
+    .cmp-meta { font-size: 12px; color: var(--muted); }
+    .unit-chip {
+      background: #1f6feb22; border: 1px solid #1f6feb44;
+      color: #79c0ff; border-radius: 4px; padding: 2px 8px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+    }
+    .src-link {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; color: var(--muted); text-decoration: none;
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 2px 8px; transition: color .15s, border-color .15s;
+    }
+    .src-link:hover { color: #79c0ff; border-color: #79c0ff; text-decoration: none; }
+    .citations {
+      margin-top: 10px; padding-top: 8px;
+      border-top: 1px solid var(--border);
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    }
+    .citations-label {
+      font-size: 10px; color: var(--muted); font-weight: 600;
+      text-transform: uppercase; letter-spacing: .06em; margin-right: 2px;
+    }
+
+    .cmp-table-wrap { overflow-x: auto; }
+    table.cmp-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 13px; font-variant-numeric: tabular-nums;
+    }
+    .cmp-table thead th {
+      padding: 10px 14px; background: var(--tag-bg);
+      color: var(--muted); font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .cmp-table thead th:not(:first-child) { text-align: right; }
+    .cmp-table tbody tr { border-bottom: 1px solid #21262d; }
+    .cmp-table tbody tr:last-child { border-bottom: none; }
+    .cmp-table tbody tr:hover td { background: #1c2128; }
+    .cmp-table td { padding: 9px 14px; }
+    .cmp-table td.num { text-align: right; }
+    .cmp-table td.label-cell { color: var(--text); max-width: 280px; }
+    .cmp-table td.dim { color: var(--muted); }
+    .cmp-table tr.section-row td {
+      font-weight: 700; color: var(--text);
+      background: var(--tag-bg); font-size: 11.5px;
+      text-transform: uppercase; letter-spacing: .04em;
+      padding: 7px 14px;
+    }
+
+    /* column group colouring in headers */
+    .cmp-table thead th.col-group-qoq { background: #1f3a5f44; color: #79c0ff; }
+    .cmp-table thead th.col-group-yoy { background: #2d3a1e44; color: #7ee787; }
+    .cmp-table thead th.chg-hdr { font-style: italic; letter-spacing: .08em; }
+
+    .pos { color: #3fb950; font-weight: 600; }
+    .neg { color: #f85149; font-weight: 600; }
+    .neu { color: var(--muted); }
+    .arrow-up   { display: inline-block; color: #3fb950; margin-right: 2px; }
+    .arrow-down { display: inline-block; color: #f85149; margin-right: 2px; }
+
+    .cmp-no-yoy {
+      padding: 14px 20px; font-size: 12px; color: var(--muted);
+      background: var(--tag-bg); border-top: 1px solid var(--border);
+    }
+
+    /* ── Results view ── */
+    #results-view {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .res-controls {
+      padding: 12px 20px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    }
+    .filter-pills { display: flex; gap: 6px; }
+    .pill {
+      padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted); cursor: pointer; transition: all .15s;
+    }
+    .pill.active { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+    .pill:hover:not(.active) { border-color: var(--accent2); color: var(--text); }
+    .sort-label { font-size: 12px; color: var(--muted); font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em; margin-left: 12px; }
+    .sort-select {
+      background: var(--tag-bg); border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; padding: 5px 10px;
+      font-size: 12px; outline: none; cursor: pointer;
+    }
+    .res-count { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+    .res-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+    table.res-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 13px; font-variant-numeric: tabular-nums;
+    }
+    .res-table thead th {
+      padding: 9px 12px; background: var(--tag-bg);
+      color: var(--muted); font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+      position: sticky; top: 0; z-index: 1;
+    }
+    .res-table thead th:not(:first-child):not(:nth-child(2)) { text-align: right; }
+    .res-table tbody tr { border-bottom: 1px solid #21262d; cursor: pointer; }
+    .res-table tbody tr:hover td { background: #1c2128; }
+    .res-table td { padding: 9px 12px; }
+    .res-table td.sym { font-weight: 700; color: var(--text); white-space: nowrap; }
+    .res-table td.co  { color: var(--muted); font-size: 12px; max-width: 200px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-table td.num { text-align: right; }
+    .res-table td.per { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .res-table td.dt  { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .res-cmp-btn {
+      font-size: 11px; padding: 3px 8px; border-radius: 4px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted); cursor: pointer; transition: all .15s;
+    }
+    .res-cmp-btn:hover { border-color: var(--accent2); color: #79c0ff; }
+    .growth-pos { color: #3fb950; font-weight: 600; }
+    .growth-neg { color: #f85149; font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">📈</div>
+      <div>
+        <div class="logo-text">EP News AI</div>
+        <div class="logo-sub">BSE/NSE Announcement Search</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Quick Queries</div>
+      <div id="chips"></div>
+    </div>
+
+    <div>
+      <div class="section-title">Power Prompts</div>
+      <div id="power-prompts"></div>
+    </div>
+
+    <div>
+      <div class="section-title">Database</div>
+      <div class="stats-box">
+        <div class="stats-row"><span>Announcements</span><span id="s-ann">—</span></div>
+        <div class="stats-row"><span>Financial results</span><span id="s-fin">—</span></div>
+        <div class="stats-row"><span>Vector index</span><span id="s-vec">—</span></div>
+        <div class="stats-row"><span>Date range</span><span id="s-date">—</span></div>
+      </div>
+    </div>
+
+    <button class="clear-btn" onclick="clearChat()">🗑 Clear conversation</button>
+  </aside>
+
+  <!-- Main -->
+  <div class="chat-main">
+    <!-- Tab nav -->
+    <div class="tab-nav">
+      <button class="tab-btn active" id="tab-chat" onclick="switchTab('chat')">💬 Chat</button>
+      <button class="tab-btn" id="tab-compare" onclick="switchTab('compare')">📊 Compare</button>
+      <button class="tab-btn" id="tab-results" onclick="switchTab('results')">📈 Results</button>
+    </div>
+
+    <!-- Chat view -->
+    <div id="chat-view" style="display:flex; flex-direction:column; flex:1; min-height:0;">
+      <div class="chat-header">
+        <div class="dot"></div>
+        Retrieval + Ollama qwen2.5:14b · Ask anything about BSE/NSE announcements
+      </div>
+
+      <div class="messages" id="messages">
+        <div class="welcome" id="welcome">
+          <h2>EP News AI Assistant</h2>
+          <p>Retrieves relevant announcements from 3,800+ filings, then uses a local
+             LLM to answer your question. Try the suggestions on the left or ask anything.</p>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-row">
+          <textarea id="msg-input" placeholder="Ask about orders, results, acquisitions, follow-up questions…" rows="1"></textarea>
+          <button id="send-btn" onclick="sendMessage()">Send ↑</button>
+        </div>
+        <div class="hint">Enter to send · Shift+Enter for new line · Follow-ups supported</div>
+      </div>
+    </div>
+
+    <!-- Results view -->
+    <div id="results-view" style="display:none; flex:1; flex-direction:column; min-height:0;">
+      <div class="res-controls">
+        <div class="filter-pills">
+          <button class="pill active" id="pill-7"  onclick="setDays(7)">7 days</button>
+          <button class="pill"        id="pill-30" onclick="setDays(30)">30 days</button>
+          <button class="pill"        id="pill-0"  onclick="setDays(0)">All</button>
+        </div>
+        <span class="sort-label">Sort</span>
+        <select class="sort-select" id="res-sort" onchange="loadResults()">
+          <option value="date">Latest first</option>
+          <option value="revenue">Revenue ↓</option>
+          <option value="pat">PAT ↓</option>
+        </select>
+        <span class="res-count" id="res-count"></span>
+      </div>
+      <div class="res-body">
+        <table class="res-table">
+          <thead>
+            <tr>
+              <th style="text-align:left">Symbol</th>
+              <th style="text-align:left">Company</th>
+              <th>Period</th>
+              <th>Revenue (Cr)</th>
+              <th>PAT (Cr)</th>
+              <th>PAT Growth</th>
+              <th>Date</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="res-tbody"></tbody>
+        </table>
+        <div id="res-empty" style="display:none" class="cmp-empty">
+          <span class="cmp-icon">📈</span>No results found for this filter.
+        </div>
+      </div>
+    </div>
+
+    <!-- Compare view -->
+    <div id="compare-view" style="display:none; flex:1; flex-direction:column; min-height:0;">
+      <div class="cmp-controls">
+        <label>Stock</label>
+        <div class="cmp-input-wrap">
+          <span class="cmp-search-icon">⌕</span>
+          <input id="symbol-input" list="symbol-list"
+                 placeholder="e.g. RATNAVEER, TCS, INFY…"
+                 autocomplete="off"
+                 oninput="onSymbolInput()" />
+          <datalist id="symbol-list"></datalist>
+        </div>
+        <button id="load-btn" onclick="loadComparison()">Load</button>
+      </div>
+      <div class="cmp-body" id="cmp-body">
+        <div class="cmp-empty">
+          <span class="cmp-icon">📊</span>
+          Select a stock above to view its quarterly P&amp;L comparison.<br>
+          <small>Current quarter vs same quarter last year · % change highlighted</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  marked.setOptions({ breaks: true, gfm: true });
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let loading  = false;
+  let history  = [];   // [{role:"user"/"assistant", content:"..."}]
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  async function init() {
+    try {
+      const [statsRes, sugRes] = await Promise.all([
+        fetch('/api/stats'), fetch('/api/suggestions')
+      ]);
+      const stats = await statsRes.json();
+      const sug   = await sugRes.json();
+
+      document.getElementById('s-ann').textContent  = (stats.sql_announcements||0).toLocaleString();
+      document.getElementById('s-fin').textContent  = (stats.sql_financial_results||0).toLocaleString();
+      document.getElementById('s-vec').textContent  =
+        ((stats.chroma_announcements||0)+(stats.chroma_financials||0)).toLocaleString()+' docs';
+      const from = (stats.date_from||'').slice(0,10);
+      const to   = (stats.date_to||'').slice(0,10);
+      document.getElementById('s-date').textContent = from ? `${from} → ${to}` : '—';
+
+      const chips = document.getElementById('chips');
+      (sug.suggestions||[]).forEach(s => {
+        const b = document.createElement('button');
+        b.className = 'chip';
+        b.textContent = s;
+        b.onclick = () => { document.getElementById('msg-input').value = s; sendMessage(); };
+        chips.appendChild(b);
+      });
+
+      // Power Prompts
+      const pp = document.getElementById('power-prompts');
+      POWER_PROMPTS.forEach((p, i) => {
+        const b = document.createElement('button');
+        b.className = 'prompt-tag';
+        b.innerHTML = `<span class="ptag-icon">${p.icon}</span><span class="ptag-label">${p.label}</span><span class="ptag-arrow">↗</span>`;
+        b.title = p.prompt.slice(0, 120) + '…';
+        b.onclick = () => {
+          switchTab('chat');
+          document.getElementById('msg-input').value = p.prompt;
+          document.getElementById('msg-input').focus();
+        };
+        pp.appendChild(b);
+      });
+    } catch(e) { console.warn('init error', e); }
+  }
+
+  // ── Power Prompt definitions ───────────────────────────────────────────────
+  const POWER_PROMPTS = [
+    {
+      icon: '📊', label: 'Daily Scanner',
+      prompt: 'Scan all NSE announcements from the last 7 days. Identify and rank the top 10 highest-potential market-moving catalysts. For each, mention: Company, Ticker, Catalyst Type, Key Details, and Estimated Impact (High/Medium/Low) with reasoning.'
+    },
+    {
+      icon: '📅', label: 'Upcoming Catalysts',
+      prompt: 'List all companies with upcoming or recently announced material events in the next 15 days. Prioritize earnings results, regulatory approvals, dividend announcements, board meetings with important decisions, and corporate actions.'
+    },
+    {
+      icon: '🎯', label: 'High-Conviction Filter',
+      prompt: "Search the database for announcements containing words like 'approval', 'order win', 'patent', 'merger', 'acquisition', 'preferential allotment', 'QIP', 'bonus', or 'Regulation 30'. Summarize the most significant ones with potential stock price impact."
+    },
+    {
+      icon: '🏭', label: 'Sector-Wise Report',
+      prompt: 'Provide a sector-wise summary of major catalysts from the last 30 days across Pharma, IT, Banking, Auto, Infrastructure, Defense, and Renewable Energy. Highlight the strongest opportunities in each sector.'
+    },
+    {
+      icon: '🔄', label: 'Turnaround Detector',
+      prompt: 'Find companies that announced unexpected positive developments such as moving from losses to profits, large unexpected orders, debt reduction, or regulatory clearances in the last 30 days.'
+    },
+    {
+      icon: '👔', label: 'Insider & Corp Actions',
+      prompt: 'Identify recent announcements related to promoter buying, insider trades, share buybacks, stake sales, or changes in management/board. Flag any potentially bullish signals.'
+    },
+    {
+      icon: '⚡', label: 'Material Event Deep Dive',
+      prompt: "Query all announcements marked as 'material' or 'price sensitive' in the last 10 days. Provide detailed summaries and explain why they could significantly move the stock price."
+    },
+    {
+      icon: '📈', label: 'Comparative Analysis',
+      prompt: "Compare today's NSE announcements with the previous 3 days. Highlight any new major catalysts and companies showing follow-up developments or escalation of earlier events."
+    },
+    {
+      icon: '📋', label: 'Watchlist Checker',
+      prompt: 'Review the following companies and flag any new catalysts, updates, or material announcements from the NSE database in the last 30 days: [insert your tickers here, e.g. RELIANCE, TCS, INFY, HDFC, WIPRO]'
+    },
+    {
+      icon: '💎', label: 'Best Risk-Reward',
+      prompt: 'From the last 30 days of NSE announcements, recommend the top 5–7 stocks with the strongest catalyst-driven upside potential. Include catalyst details, timeline, and key risks for each.'
+    },
+  ];
+
+  // ── DOM helpers ────────────────────────────────────────────────────────────
+  function removeWelcome() {
+    const w = document.getElementById('welcome');
+    if (w) w.remove();
+  }
+
+  function addUserBubble(text) {
+    removeWelcome();
+    const msgs = document.getElementById('messages');
+    const div  = document.createElement('div');
+    div.className = 'msg user';
+    div.innerHTML = `
+      <div class="avatar">U</div>
+      <div class="bubble">${escHtml(text)}</div>`;
+    msgs.appendChild(div);
+    scrollBottom();
+  }
+
+  function addBotBubble() {
+    removeWelcome();
+    const msgs = document.getElementById('messages');
+    const div  = document.createElement('div');
+    div.className = 'msg bot';
+    div.id = 'bot-active';
+    div.innerHTML = `
+      <div class="avatar">AI</div>
+      <div class="bubble">
+        <div class="typing"><span></span><span></span><span></span></div>
+      </div>`;
+    msgs.appendChild(div);
+    scrollBottom();
+    return div.querySelector('.bubble');
+  }
+
+  function setBadge(bubble, intent, sources, meta) {
+    const labels = {
+      order_win: '📦 Order Wins', financials: '📊 Financials',
+      announcements: '📋 Announcements', all: '🔍 All Sources',
+    };
+    const badgeRow = document.createElement('div');
+    badgeRow.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:8px;';
+
+    // DB intent badge
+    const badge = document.createElement('span');
+    badge.className = `badge badge-${intent}`;
+    badge.style.marginBottom = '0';
+    badge.textContent = labels[intent] || intent;
+    badgeRow.appendChild(badge);
+
+    // Web search badge (shown when web_search:true in meta)
+    if (meta && meta.web_search && meta.symbol) {
+      const wb = document.createElement('span');
+      wb.className = 'web-badge';
+      wb.id = 'web-badge-' + Date.now();
+      wb.innerHTML = `<span class="spin"></span> Web · ${meta.symbol}`;
+      badgeRow.appendChild(wb);
+      bubble._webBadgeId = wb.id;
+    }
+
+    bubble.innerHTML = '';
+    bubble.appendChild(badgeRow);
+    bubble.insertAdjacentHTML('beforeend', '<div class="md-content streaming-cursor"></div>');
+    // Store sources on the bubble for finalizeBot to render
+    bubble._sources = sources || [];
+  }
+
+  function markWebDone(bubble) {
+    if (!bubble._webBadgeId) return;
+    const wb = document.getElementById(bubble._webBadgeId);
+    if (wb) {
+      wb.classList.add('done');
+      wb.innerHTML = '🌐 Web';
+    }
+  }
+
+  function appendToken(bubble, token) {
+    const md = bubble.querySelector('.md-content');
+    if (!md) return;
+    md._raw = (md._raw || '') + token;
+    md.innerHTML = marked.parse(md._raw);
+    scrollBottom();
+  }
+
+  function finalizeBot(bubble) {
+    bubble.classList.remove('streaming-cursor');
+    const md = bubble.querySelector('.md-content');
+    if (md) {
+      md.classList.remove('streaming-cursor');
+      bubble.querySelector('.md-content').innerHTML = marked.parse(md._raw || '');
+    }
+    // Render citations if sources were provided
+    const sources = bubble._sources || [];
+    if (sources.length) {
+      const cite = document.createElement('div');
+      cite.className = 'citations';
+      cite.innerHTML = `<span class="citations-label">Sources</span>` +
+        sources.map((url, i) => {
+          // Extract a short label from the URL filename
+          const parts = url.split('/');
+          const fname = parts[parts.length - 1] || `PDF ${i + 1}`;
+          const label = fname.length > 40 ? fname.slice(0, 37) + '…' : fname;
+          return `<a class="src-link" href="${escHtml(url)}" target="_blank" rel="noopener">📄 ${escHtml(label)}</a>`;
+        }).join('');
+      bubble.appendChild(cite);
+    }
+    const div = document.getElementById('bot-active');
+    if (div) div.removeAttribute('id');
+  }
+
+  function scrollBottom() {
+    const msgs = document.getElementById('messages');
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Send ───────────────────────────────────────────────────────────────────
+  async function sendMessage() {
+    const input = document.getElementById('msg-input');
+    const msg   = input.value.trim();
+    if (!msg || loading) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    loading = true;
+    document.getElementById('send-btn').disabled = true;
+
+    addUserBubble(msg);
+    const bubble = addBotBubble();
+    let fullAnswer = '';
+
+    try {
+      const res = await fetch('/api/chat', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ message: msg, history: history.slice(-4), n: 8 }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();   // keep incomplete line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (!payload) continue;
+
+          let ev;
+          try { ev = JSON.parse(payload); } catch { continue; }
+
+          if (ev.type === 'meta') {
+            setBadge(bubble, ev.intent, ev.sources || [], ev);
+          } else if (ev.type === 'token') {
+            // First token arriving means web search returned → mark done
+            if (!bubble._firstToken) {
+              bubble._firstToken = true;
+              markWebDone(bubble);
+            }
+            appendToken(bubble, ev.text);
+            fullAnswer += ev.text;
+          } else if (ev.type === 'done') {
+            markWebDone(bubble);  // ensure badge resolved even if 0 tokens
+            break;
+          }
+        }
+      }
+
+      finalizeBot(bubble);
+
+      // Update conversation history
+      history.push({ role: 'user',      content: msg });
+      history.push({ role: 'assistant', content: fullAnswer });
+      if (history.length > 20) history = history.slice(-20);
+
+    } catch (err) {
+      bubble.innerHTML = `<span style="color:#f85149">⚠️ Error: ${escHtml(err.message)}</span>`;
+    } finally {
+      loading = false;
+      document.getElementById('send-btn').disabled = false;
+      input.focus();
+    }
+  }
+
+  function clearChat() {
+    document.getElementById('messages').innerHTML =
+      `<div class="welcome" id="welcome">
+         <h2>EP News AI Assistant</h2>
+         <p>Conversation cleared. Ask a new question.</p>
+       </div>`;
+    history = [];
+  }
+
+  // ── Input auto-resize + Enter to send ────────────────────────────────────
+  const inp = document.getElementById('msg-input');
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+  inp.addEventListener('input', () => {
+    inp.style.height = 'auto';
+    inp.style.height = Math.min(inp.scrollHeight, 140) + 'px';
+  });
+
+  init();
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    ['chat','compare','results'].forEach(t => {
+      document.getElementById(t + '-view').style.display = 'none';
+      document.getElementById('tab-' + t).classList.remove('active');
+    });
+    document.getElementById(tab + '-view').style.display = 'flex';
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'compare' && !window._symbolsLoaded) loadSymbols();
+    if (tab === 'results'  && !window._resultsLoaded)  loadResults();
+  }
+
+  // ── Results tab ───────────────────────────────────────────────────────────
+  window._resultsLoaded = false;
+  window._resDays = 7;
+
+  function setDays(d) {
+    window._resDays = d;
+    ['7','30','0'].forEach(x => {
+      document.getElementById('pill-' + x).classList.toggle('active', String(x) === String(d));
+    });
+    loadResults();
+  }
+
+  async function loadResults() {
+    const sort = document.getElementById('res-sort').value;
+    const days = window._resDays;
+    try {
+      const res  = await fetch(`/api/results?days=${days}&sort=${sort}`);
+      const data = await res.json();
+      renderResultsTable(data);
+      window._resultsLoaded = true;
+    } catch(e) { console.warn('results error', e); }
+  }
+
+  function fmtCr(v) {
+    if (v === null || v === undefined) return '<span style="color:var(--muted)">—</span>';
+    return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function fmtGrowth(v) {
+    if (v === null || v === undefined) return '<span style="color:var(--muted)">—</span>';
+    const cls = v >= 0 ? 'growth-pos' : 'growth-neg';
+    const arrow = v >= 0 ? '▲' : '▼';
+    return `<span class="${cls}">${arrow}${Math.abs(v).toFixed(1)}%</span>`;
+  }
+
+  function renderResultsTable(rows) {
+    const tbody = document.getElementById('res-tbody');
+    const empty = document.getElementById('res-empty');
+    document.getElementById('res-count').textContent = rows.length + ' companies';
+
+    if (!rows.length) {
+      tbody.innerHTML = '';
+      empty.style.display = '';
+      return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = rows.map(r => `
+      <tr onclick="goCompare('${escHtml(r.symbol)}')">
+        <td class="sym">${escHtml(r.symbol)}</td>
+        <td class="co">${escHtml(r.company)}</td>
+        <td class="per num">${escHtml(r.period)}</td>
+        <td class="num">${fmtCr(r.revenue_cr)}</td>
+        <td class="num">${fmtCr(r.pat_cr)}</td>
+        <td class="num">${fmtGrowth(r.pat_growth_pct)}</td>
+        <td class="dt">${escHtml(r.broadcast_dt)}</td>
+        <td><button class="res-cmp-btn" onclick="event.stopPropagation();goCompare('${escHtml(r.symbol)}')">P&amp;L ↗</button></td>
+      </tr>`).join('');
+  }
+
+  function goCompare(symbol) {
+    switchTab('compare');
+    document.getElementById('symbol-input').value = symbol;
+    loadComparison();
+  }
+
+  // ── Compare: load symbol list ─────────────────────────────────────────────
+  window._symbolsLoaded = false;
+
+  async function loadSymbols() {
+    try {
+      const res = await fetch('/api/compare/symbols');
+      const symbols = await res.json();
+      const dl = document.getElementById('symbol-list');
+      dl.innerHTML = '';
+      symbols.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.symbol;
+        opt.textContent = `${s.symbol} — ${s.company}`;
+        dl.appendChild(opt);
+      });
+      window._symbolsLoaded = true;
+    } catch(e) { console.warn('symbols load error', e); }
+  }
+
+  function onSymbolInput() {
+    const val = document.getElementById('symbol-input').value.trim();
+    // Auto-load when user picks from datalist (exact symbol match)
+    if (window._symbolsLoaded && val.length >= 2) {
+      const dl = document.getElementById('symbol-list');
+      const opts = [...dl.options].map(o => o.value);
+      if (opts.includes(val.toUpperCase())) loadComparison();
+    }
+  }
+
+  // ── Compare: fetch + render ────────────────────────────────────────────────
+  async function loadComparison() {
+    const raw    = document.getElementById('symbol-input').value.trim();
+    const symbol = raw.split('—')[0].trim().toUpperCase();
+    if (!symbol) return;
+
+    const body = document.getElementById('cmp-body');
+    body.innerHTML = '<div class="cmp-empty"><span class="cmp-icon">⏳</span>Loading…</div>';
+    document.getElementById('load-btn').disabled = true;
+
+    try {
+      const res  = await fetch('/api/compare?symbol=' + encodeURIComponent(symbol));
+      const data = await res.json();
+      if (data.error) {
+        body.innerHTML = `<div class="cmp-empty"><span class="cmp-icon">⚠️</span>${escHtml(data.error)}</div>`;
+        return;
+      }
+      renderCompareTable(data, body);
+    } catch(e) {
+      body.innerHTML = `<div class="cmp-empty"><span class="cmp-icon">⚠️</span>Network error: ${escHtml(e.message)}</div>`;
+    } finally {
+      document.getElementById('load-btn').disabled = false;
+    }
+  }
+
+  function fmtNum(v) {
+    if (v === null || v === undefined) return '—';
+    return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function renderCompareTable(data, container) {
+    const { symbol, company, unit, col1, col2, col3, col4, broadcast_dt, line_items } = data;
+
+    const col2Display = col2 || '';
+    const col3Display = col3 || '';
+
+    const hasQoQ = !!(col2) || Object.values(line_items).some(v => v.length > 1 && v[1] !== null);
+    const hasYoY = !!(col3) || Object.values(line_items).some(v => v.length > 2 && v[2] !== null);
+
+    // total columns: label + cur + [prevQ + QoQ%] + [LY + YoY%]
+    const nCols = 1 + 1 + (hasQoQ ? 2 : 0) + (hasYoY ? 2 : 0);
+
+    const INCOME_KW  = ['revenue','income','interest earned','net interest','total income'];
+    const EXPENSE_KW = ['expense','cost','deprecia','amortis','impairment','finance cost','employee','contractual'];
+    const PROFIT_KW  = ['profit','ebitda','pat','pbt','tax'];
+
+    function classify(label) {
+      const l = label.toLowerCase();
+      if (INCOME_KW.some(k  => l.includes(k))) return 'income';
+      if (EXPENSE_KW.some(k => l.includes(k))) return 'expense';
+      if (PROFIT_KW.some(k  => l.includes(k))) return 'profit';
+      return null;
+    }
+
+    function pctCell(cur, base) {
+      if (cur === null || base === null || base === 0) return '<td class="num dim">—</td>';
+      const pct = ((cur - base) / Math.abs(base)) * 100;
+      const cls   = pct >= 0 ? 'pos' : 'neg';
+      const arrow = pct >= 0 ? '▲' : '▼';
+      return `<td class="num"><span class="${cls}">${arrow}${Math.abs(pct).toFixed(1)}%</span></td>`;
+    }
+
+    let rows = '';
+    let lastSection = '';
+    const sectionLabels = { income: 'Income', expense: 'Expenses', profit: 'Profit & Tax' };
+
+    for (const [label, vals] of Object.entries(line_items)) {
+      const cur = vals[0];
+      const pq  = vals[1] ?? null;
+      const py  = vals[2] ?? null;
+      const sec = classify(label);
+
+      // Only emit section header when the section is a named one and changes
+      if (sec && sec !== lastSection) {
+        rows += `<tr class="section-row"><td colspan="${nCols}">${sectionLabels[sec]}</td></tr>`;
+        lastSection = sec;
+      }
+
+      const pqTd  = hasQoQ ? `<td class="num">${fmtNum(pq)}</td>` : '';
+      const qoqTd = hasQoQ ? pctCell(cur, pq) : '';
+      const pyTd  = hasYoY ? `<td class="num">${fmtNum(py)}</td>` : '';
+      const yoyTd = hasYoY ? pctCell(cur, py) : '';
+
+      rows += `<tr>
+        <td class="label-cell">${escHtml(label)}</td>
+        <td class="num">${fmtNum(cur)}</td>
+        ${pqTd}${qoqTd}${pyTd}${yoyTd}
+      </tr>`;
+    }
+
+    // Column group headers
+    const qoqHeader = hasQoQ
+      ? `<th class="col-group-qoq">${escHtml(col2Display || 'Prev Q')}</th>
+         <th class="col-group-qoq chg-hdr">QoQ</th>`
+      : '';
+    const yoyHeader = hasYoY
+      ? `<th class="col-group-yoy">${escHtml(col3Display || 'Prior Year Q')}</th>
+         <th class="col-group-yoy chg-hdr">YoY</th>`
+      : '';
+
+    const parts = [
+      hasQoQ ? `${col1} vs ${col2Display||'Prev Q'} (QoQ)` : '',
+      hasYoY ? `${col1} vs ${col3Display||'Prior Year Q'} (YoY)` : '',
+    ].filter(Boolean);
+    const periodNote = parts.length ? parts.join(' · ') : col1;
+
+    const noteBar = (!hasQoQ || !hasYoY)
+      ? `<div class="cmp-no-yoy">ℹ️ ${!hasQoQ ? 'Previous quarter (QoQ)' : 'Prior year same quarter (YoY)'} not available for this filing.</div>`
+      : '';
+
+    const srcLink = data.source_url
+      ? `<a class="src-link" href="${escHtml(data.source_url)}" target="_blank" rel="noopener">
+           📄 Source PDF ↗
+         </a>`
+      : '';
+
+    container.innerHTML = `
+      <div class="cmp-card">
+        <div class="cmp-card-header">
+          <div>
+            <div class="cmp-title">${escHtml(symbol)}<span>${escHtml(company)}</span></div>
+            <div class="cmp-meta">Filed ${broadcast_dt} · ${escHtml(periodNote)}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${srcLink}
+            <span class="unit-chip">Rs. in ${escHtml(unit)}</span>
+          </div>
+        </div>
+        ${noteBar}
+        <div class="cmp-table-wrap">
+          <table class="cmp-table">
+            <thead>
+              <tr>
+                <th style="text-align:left">Line Item</th>
+                <th>${escHtml(col1||'Current Q')}</th>
+                ${qoqHeader}
+                ${yoyHeader}
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+</script>
+</body>
+</html>

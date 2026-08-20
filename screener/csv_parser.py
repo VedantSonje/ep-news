@@ -83,14 +83,35 @@ class CsvParser:
             for row in reader:
                 yield self._build(row, col)
 
+    # Max plausible values for sanity-checking CSV numeric fields
+    _MAX_ORDER_CR  = 1_000_000   # ₹10 lakh Cr — impossible for any single order
+    _MAX_SCORE     = 10
+
     def _build(self, row: dict[str, str], col: ColumnMapper) -> Announcement:
         dt_raw = row.get(col.get("datetime") or "", "").strip()
+
+        symbol  = row.get(col.get("symbol")     or "", "").strip().upper()
+        company = row.get(col.get("company")    or "", "").strip()
+        subject = row.get(col.get("subject")    or "", "").strip()
+        details = row.get(col.get("details")    or "", "").strip()
+        attach  = row.get(col.get("attachment") or "", "").strip()
+
+        # Input guardrail: strip control characters from free-text fields
+        for field_val in (subject, details):
+            if '\x00' in field_val or len(field_val) > 10_000:
+                details = details[:10_000].replace('\x00', '')
+                subject = subject[:500].replace('\x00', '')
+
+        # Attachment must be a URL or empty — reject suspicious values
+        if attach and not (attach.startswith("http") or attach.startswith("/")):
+            attach = ""
+
         return Announcement(
-            symbol      = row.get(col.get("symbol")     or "", "").strip(),
-            company     = row.get(col.get("company")    or "", "").strip(),
-            subject     = row.get(col.get("subject")    or "", "").strip(),
-            details     = row.get(col.get("details")    or "", "").strip(),
-            attachment  = row.get(col.get("attachment") or "", "").strip(),
+            symbol        = symbol,
+            company       = company,
+            subject       = subject,
+            details       = details,
+            attachment    = attach,
             broadcast_raw = dt_raw,
             broadcast_dt  = self._parse_dt(dt_raw),
         )

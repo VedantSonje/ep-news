@@ -72,6 +72,19 @@ class FilterConfig:
         # Distress / CIRP
         "Corporate Insolvency Resolution Process":          "cirp",
         "Resolution Plan (for CIRP companies)":             "cirp",
+
+        # Summary-only — extract a plain-text summary; no financial table expected
+        # Investor presentations, monthly updates, capacity news, MoUs all carry
+        # useful business context but never contain P&L tables.
+        "Investor Presentation":                            "summary_only",
+        "Monthly Business Updates":                         "summary_only",
+        "Capacity addition":                                "summary_only",
+        "Commencement of commercial production/operations": "summary_only",
+        "Agreements":                                       "summary_only",
+        "Memorandum of Understanding/Agreements":           "summary_only",
+        "Diversification/Disinvestment":                    "summary_only",
+        "Sale or disposal":                                 "summary_only",
+        "Adoption of new line(s) of business":              "summary_only",
     })
 
     # ── Comprehensive subject allowlist — full NSE/BSE taxonomy ───────────

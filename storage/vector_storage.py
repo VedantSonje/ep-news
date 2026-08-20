@@ -104,7 +104,13 @@ class ChromaDBStorage(BaseStorage):
                 "date_int":      date_int,
             })
 
-        self._col.upsert(ids=ids, documents=docs, metadatas=metas)
+        chunk = 5000
+        for i in range(0, len(ids), chunk):
+            self._col.upsert(
+                ids=ids[i:i+chunk],
+                documents=docs[i:i+chunk],
+                metadatas=metas[i:i+chunk],
+            )
         return len(ids)
 
     def count(self) -> int:

@@ -51,8 +51,10 @@ class FinancialResult:
     # ── Structural / classification ────────────────────────────────────────
     sector:             str | None = None   # sector tag (e.g. "defence", "railways")
     period_label:       str | None = None   # normalized "Q1 FY2027", "FY2026", etc.
+    confidence:         str | None = None   # "high" | "medium" | "low"
 
     # ── Order win specifics ────────────────────────────────────────────────
+    order_value_cr:     float | None = None # Rs. Crore value of the specific new order
     client_name:        str | None = None   # who placed the order
     client_type:        str | None = None   # "Government / PSU" | "Private sector"
     order_sector:       str | None = None   # "defence", "power", "roads", ...

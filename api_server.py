@@ -30,7 +30,7 @@ from pathlib import Path
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -41,6 +41,14 @@ from api.chat_handler import ChatHandler
 import os as _os
 _USE_AGENT   = _os.getenv("USE_AGENT",   "0").lower() in ("1", "true", "yes")
 _WEB_SEARCH  = _os.getenv("WEB_SEARCH",  "0").lower() in ("1", "true", "yes")
+
+# ── API key auth for write / admin endpoints ──────────────────────────────────
+_ADMIN_API_KEY = _os.getenv("EP_ADMIN_KEY", "")   # set EP_ADMIN_KEY in .env to enable
+
+def _require_admin(x_api_key: str | None) -> None:
+    """Raise 403 if admin key is configured and the request doesn't match."""
+    if _ADMIN_API_KEY and x_api_key != _ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
 _log = logging.getLogger("ep_news.scheduler")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
@@ -94,16 +102,75 @@ async def _do_update(target_date: date) -> None:
     if rc != 0:
         _log.warning("main.py extract exited %d", rc)
 
+    # Fetch Chartink breakout signals
+    rc = await _run_cmd(sys.executable, "fetch_breakouts.py", "--date", date_str)
+    if rc != 0:
+        _log.warning("fetch_breakouts.py exited %d", rc)
+
+    # Generate daily brief after ingestion
+    _log.info("Generating daily brief for %s…", date_str)
+    try:
+        from api.brief_agent import generate_daily_brief
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, generate_daily_brief, cfg.db_path, date_str
+        )
+        if result:
+            _log.info("Brief generated: %d chars, %d highlights", len(result["content"]), len(result["highlights"]))
+        else:
+            _log.info("Brief skipped (no data for %s)", date_str)
+    except Exception as exc:
+        _log.warning("Brief generation failed: %s", exc)
+
     _log.info("=== Auto-update complete for %s ===", date_str)
+
+
+def _dates_missing_briefs() -> list[date]:
+    """Return dates that have announcement data but no stored brief."""
+    try:
+        conn = _sqlite3.connect(str(cfg.db_path))
+        rows = conn.execute("""
+            SELECT DISTINCT DATE(broadcast_dt) as d
+            FROM announcements
+            WHERE DATE(broadcast_dt) NOT IN (SELECT brief_date FROM daily_briefs)
+            ORDER BY d
+        """).fetchall()
+        conn.close()
+        return [date.fromisoformat(r[0]) for r in rows if r[0]]
+    except Exception:
+        return []
+
+
+async def _backfill_briefs() -> None:
+    """Generate briefs for any dates that have data but no stored brief."""
+    missing = _dates_missing_briefs()
+    if not missing:
+        return
+    _log.info("Backfilling briefs for %d dates: %s … %s", len(missing), missing[0], missing[-1])
+    for d in missing:
+        _log.info("  Generating brief for %s…", d)
+        try:
+            from api.brief_agent import generate_daily_brief
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, generate_daily_brief, cfg.db_path, d.isoformat()
+            )
+            if result:
+                _log.info("  Brief for %s: %d chars", d, len(result["content"]))
+            else:
+                _log.info("  Brief for %s: skipped (no data)", d)
+        except Exception as exc:
+            _log.warning("  Brief for %s failed: %s", d, exc)
 
 
 async def _scheduler() -> None:
     """
-    1. On startup: catch up any missing dates between last DB entry and today.
+    1. On startup: backfill briefs for any dates missing one, then catch up new data.
     2. Then: every day at 22:00 local time, update for today.
     """
     today     = date.today()
     last_date = _last_db_date()
+
+    # ── Backfill briefs for dates with data but no brief ─────────────────────
+    await _backfill_briefs()
 
     # ── Startup catch-up ──────────────────────────────────────────────────────
     if last_date is None or last_date < today:
@@ -129,6 +196,10 @@ async def _scheduler() -> None:
 
 @asynccontextmanager
 async def lifespan(_app):
+    # Ensure daily_briefs table exists before scheduler starts
+    from api.brief_agent import ensure_table as _ensure_brief_table
+    await asyncio.get_event_loop().run_in_executor(None, _ensure_brief_table, cfg.db_path)
+
     task = asyncio.create_task(_scheduler())
     yield
     task.cancel()
@@ -140,8 +211,11 @@ async def lifespan(_app):
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 
-app     = FastAPI(title="EP News AI", version="2.0", lifespan=lifespan)
-handler = ChatHandler(chroma_path=cfg.chroma_path, db_path=cfg.db_path)
+app         = FastAPI(title="EP News AI", version="2.0", lifespan=lifespan)
+handler     = ChatHandler(chroma_path=cfg.chroma_path, db_path=cfg.db_path)
+
+from api.tool_agent import ToolAgent
+tool_agent  = ToolAgent(db_path=cfg.db_path, chroma_path=cfg.chroma_path)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -234,10 +308,193 @@ async def compare(symbol: str):
     }
 
 
+@app.get("/api/breakouts")
+async def breakouts(days: int = 14, sector: str = "", marketcap: str = ""):
+    """Volume breakout signals enriched with nearest DB reason (earnings / order / announcement)."""
+    conn = _sqlite3.connect(str(cfg.db_path))
+
+    where, params = [], []
+    if days > 0:
+        where.append(f"signal_date >= DATE('now', '-{int(days)} days')")
+    if sector:
+        where.append("LOWER(sector) LIKE ?")
+        params.append(f"%{sector.lower()}%")
+    if marketcap and marketcap != "all":
+        where.append("LOWER(marketcap) = ?")
+        params.append(marketcap.lower())
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    rows = conn.execute(f"""
+        SELECT vb.symbol, vb.signal_date,
+               vb.marketcap,
+               COALESCE(vb.sector, ss.sector) as sector,
+               vb.close, vb.per_chg, vb.volume,
+               vb.company
+        FROM volume_breakouts vb
+        LEFT JOIN stock_sectors ss ON ss.symbol = vb.symbol
+        {where_sql}
+        ORDER BY vb.signal_date DESC LIMIT 300
+    """, params).fetchall()
+
+    enriched = []
+    for symbol, signal_date, mktcap, sec, close, per_chg, vol, co_chartink in rows:
+        # 1) financial result within ±5 days (highest priority)
+        fin = conn.execute("""
+            SELECT period, revenue_cr, pat_cr, pat_growth_pct, broadcast_dt, company
+            FROM financial_results
+            WHERE symbol = ?
+              AND period_type NOT IN
+                ('order_win','acquisition','restructuring','credit_rating',
+                 'cirp','fundraising','buyback','open_offer')
+              AND DATE(broadcast_dt) BETWEEN DATE(?, '-5 days') AND DATE(?, '+5 days')
+            ORDER BY ABS(JULIANDAY(broadcast_dt) - JULIANDAY(?)) LIMIT 1
+        """, (symbol, signal_date, signal_date, signal_date)).fetchone()
+
+        # 2) order-win announcement within ±5 days
+        ord_ann = conn.execute("""
+            SELECT subject, company, broadcast_dt, order_value_cr
+            FROM announcements
+            WHERE symbol = ? AND LOWER(subject) LIKE '%order%'
+              AND DATE(broadcast_dt) BETWEEN DATE(?, '-5 days') AND DATE(?, '+5 days')
+            ORDER BY ABS(JULIANDAY(broadcast_dt) - JULIANDAY(?)) LIMIT 1
+        """, (symbol, signal_date, signal_date, signal_date)).fetchone()
+
+        # 3) any announcement within ±5 days
+        any_ann = conn.execute("""
+            SELECT subject, company, broadcast_dt
+            FROM announcements
+            WHERE symbol = ?
+              AND DATE(broadcast_dt) BETWEEN DATE(?, '-5 days') AND DATE(?, '+5 days')
+            ORDER BY ABS(JULIANDAY(broadcast_dt) - JULIANDAY(?)) LIMIT 1
+        """, (symbol, signal_date, signal_date, signal_date)).fetchone()
+
+        reason_type = reason_text = reason_date = company = None
+
+        if fin:
+            period, rev, pat, pat_g, fin_dt, co = fin
+            reason_type = "earnings"
+            company = co
+            parts = []
+            if rev and rev > 0: parts.append(f"Rev ₹{rev:,.0f}Cr")
+            if pat: parts.append(f"PAT ₹{pat:,.0f}Cr")
+            if pat_g and pat_g > -900:
+                parts.append(f"{'+' if pat_g > 0 else ''}{pat_g:.1f}% YoY")
+            reason_text = (f"{period} | " if period else "") + " · ".join(parts)
+            reason_date = (fin_dt or "")[:10]
+        elif ord_ann:
+            subj, co, ann_dt, oval = ord_ann
+            reason_type = "order"
+            company = co
+            val_str = f" — ₹{oval:,.0f}Cr" if oval and oval > 0 else ""
+            reason_text = (subj or "Order Win") + val_str
+            reason_date = (ann_dt or "")[:10]
+        elif any_ann:
+            subj, co, ann_dt = any_ann
+            reason_type = "announcement"
+            company = co
+            reason_text = subj or "Announcement"
+            reason_date = (ann_dt or "")[:10]
+
+        enriched.append({
+            "symbol":      symbol,
+            "signal_date": signal_date,
+            "marketcap":   mktcap or "",
+            "sector":      sec or "",
+            "company":     company or co_chartink or "",
+            "close":       close,
+            "per_chg":     per_chg,
+            "volume":      vol,
+            "reason_type": reason_type,
+            "reason_text": reason_text,
+            "reason_date": reason_date,
+        })
+
+    conn.close()
+    return enriched
+
+
+@app.get("/api/brief")
+async def get_brief(date: str = ""):
+    """Return the latest stored daily brief (or today's by date param)."""
+    from api.brief_agent import get_latest_brief
+    brief = await asyncio.get_event_loop().run_in_executor(
+        None, get_latest_brief, cfg.db_path, date or None
+    )
+    if not brief:
+        return {"available": False}
+    return {"available": True, **brief}
+
+
+@app.post("/api/brief/generate")
+async def trigger_brief(req_date: str = "", x_api_key: str | None = Header(default=None)):
+    """Manually trigger brief generation for a date (for testing). Requires EP_ADMIN_KEY."""
+    _require_admin(x_api_key)
+    from api.brief_agent import generate_daily_brief
+    target = req_date or date.today().isoformat()
+    result = await asyncio.get_event_loop().run_in_executor(
+        None, generate_daily_brief, cfg.db_path, target
+    )
+    return result or {"error": "No data for that date"}
+
+
+@app.get("/api/investigate/{symbol}")
+async def investigate(symbol: str, signal_date: str = ""):
+    """
+    SSE stream for the Breakout Investigation Agent.
+    Events: step (db/web/llm progress) · token (LLM text) · done
+    """
+    from api.investigate import investigate_stream
+
+    if not signal_date:
+        signal_date = date.today().isoformat()
+
+    loop  = asyncio.get_event_loop()
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+    def _run() -> None:
+        try:
+            for event in investigate_stream(
+                symbol=symbol.upper(),
+                signal_date=signal_date,
+                db_path=cfg.db_path,
+            ):
+                asyncio.run_coroutine_threadsafe(queue.put(event), loop).result()
+        finally:
+            asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
+
+    async def generate():
+        loop.run_in_executor(None, _run)
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield f"data: {event}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 class ChatRequest(BaseModel):
     message: str
     n:       int        = 8
     history: list[dict] = []   # [{"role": "user"/"assistant", "content": "..."}]
+
+
+_CHAT_MAX_CHARS  = 1_000
+_INJECT_RE = __import__("re").compile(
+    r'(ignore\s+(all\s+)?(previous|prior|above)\s+instructions?'
+    r'|you\s+are\s+now\s+a'
+    r'|<\s*(system|instructions?)\s*>'
+    r'|###\s*(system|instruction))',
+    __import__("re").IGNORECASE,
+)
+
+def _validate_chat_input(msg: str) -> str | None:
+    """Return an error string if the message fails guardrails, else None."""
+    if len(msg) > _CHAT_MAX_CHARS:
+        return f"Message too long ({len(msg)} chars, max {_CHAT_MAX_CHARS})."
+    if _INJECT_RE.search(msg):
+        return "Message contains disallowed content."
+    return None
 
 
 @app.post("/api/chat")
@@ -253,6 +510,13 @@ async def chat(req: ChatRequest):
             yield f"data: {json.dumps({'type':'token','text':'Please type a question.'})}\n\n"
             yield f"data: {json.dumps({'type':'done'})}\n\n"
         return StreamingResponse(empty(), media_type="text/event-stream")
+
+    err = _validate_chat_input(req.message.strip())
+    if err:
+        async def _bad():
+            yield f"data: {json.dumps({'type':'token','text':err})}\n\n"
+            yield f"data: {json.dumps({'type':'done'})}\n\n"
+        return StreamingResponse(_bad(), media_type="text/event-stream")
 
     def generate():
         msg = req.message.strip()
@@ -321,6 +585,139 @@ async def chat(req: ChatRequest):
         yield f"data: {json.dumps({'type':'done'})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/api/chat/agent")
+async def agent_chat(req: ChatRequest):
+    """
+    Tool-agent SSE stream. Events:
+      {"type": "tool_call",   "tool": "search_orders", "args": {...}}
+      {"type": "tool_result", "tool": "search_orders", "count": 12, "preview": "..."}
+      {"type": "token",       "text": "..."}
+      {"type": "done"}
+    """
+    if not req.message.strip():
+        async def _empty():
+            yield f"data: {json.dumps({'type':'token','text':'Please type a question.'})}\n\n"
+            yield f"data: {json.dumps({'type':'done'})}\n\n"
+        return StreamingResponse(_empty(), media_type="text/event-stream")
+
+    err = _validate_chat_input(req.message.strip())
+    if err:
+        async def _bad_agent():
+            yield f"data: {json.dumps({'type':'token','text':err})}\n\n"
+            yield f"data: {json.dumps({'type':'done'})}\n\n"
+        return StreamingResponse(_bad_agent(), media_type="text/event-stream")
+
+    loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
+
+    def _run() -> None:
+        try:
+            for event in tool_agent.stream(req.message.strip(), req.history):
+                asyncio.run_coroutine_threadsafe(queue.put(event), loop).result()
+        finally:
+            asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
+
+    async def _generate():
+        loop.run_in_executor(None, _run)
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield f"data: {json.dumps(event, default=str)}\n\n"
+
+    return StreamingResponse(_generate(), media_type="text/event-stream")
+
+
+# ── Watchlist ─────────────────────────────────────────────────────────────────
+
+def _ensure_watchlist(conn: _sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS watchlist (
+            symbol   TEXT PRIMARY KEY,
+            added_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+
+
+@app.get("/api/watchlist")
+async def get_watchlist():
+    """Return all symbols on the user's watchlist with latest breakout + result info."""
+    conn = _sqlite3.connect(str(cfg.db_path))
+    _ensure_watchlist(conn)
+    syms = [r[0] for r in conn.execute("SELECT symbol FROM watchlist ORDER BY added_at DESC").fetchall()]
+    result = []
+    for sym in syms:
+        latest_breakout = conn.execute("""
+            SELECT signal_date, close, per_chg FROM volume_breakouts
+            WHERE symbol = ? ORDER BY signal_date DESC LIMIT 1
+        """, (sym,)).fetchone()
+        latest_fin = conn.execute("""
+            SELECT period, pat_cr, pat_growth_pct FROM financial_results
+            WHERE symbol = ? AND period_type NOT IN
+              ('order_win','acquisition','restructuring','credit_rating',
+               'cirp','fundraising','buyback','open_offer')
+            ORDER BY broadcast_dt DESC LIMIT 1
+        """, (sym,)).fetchone()
+        result.append({
+            "symbol": sym,
+            "breakout": {"date": latest_breakout[0], "close": latest_breakout[1], "pct_chg": latest_breakout[2]} if latest_breakout else None,
+            "financials": {"period": latest_fin[0], "pat_cr": latest_fin[1], "pat_growth_pct": latest_fin[2]} if latest_fin else None,
+        })
+    conn.close()
+    return result
+
+
+class WatchlistAddRequest(BaseModel):
+    symbol: str
+
+
+@app.post("/api/watchlist")
+async def add_to_watchlist(req: WatchlistAddRequest, x_api_key: str | None = Header(default=None)):
+    _require_admin(x_api_key)
+    sym = req.symbol.strip().upper()
+    if not sym or not sym.isalnum():
+        return {"error": "symbol must be alphanumeric"}
+    conn = _sqlite3.connect(str(cfg.db_path))
+    _ensure_watchlist(conn)
+    conn.execute("INSERT OR IGNORE INTO watchlist (symbol) VALUES (?)", (sym,))
+    conn.commit()
+    conn.close()
+    return {"added": sym}
+
+
+@app.delete("/api/watchlist/{symbol}")
+async def remove_from_watchlist(symbol: str, x_api_key: str | None = Header(default=None)):
+    _require_admin(x_api_key)
+    sym = symbol.strip().upper()
+    conn = _sqlite3.connect(str(cfg.db_path))
+    _ensure_watchlist(conn)
+    conn.execute("DELETE FROM watchlist WHERE symbol = ?", (sym,))
+    conn.commit()
+    conn.close()
+    return {"removed": sym}
+
+
+@app.get("/api/watchlist/alerts")
+async def watchlist_alerts():
+    """Return today's breakout signals for watchlisted symbols."""
+    today = date.today().isoformat()
+    conn = _sqlite3.connect(str(cfg.db_path))
+    _ensure_watchlist(conn)
+    syms = [r[0] for r in conn.execute("SELECT symbol FROM watchlist").fetchall()]
+    if not syms:
+        conn.close()
+        return []
+    placeholders = ",".join("?" * len(syms))
+    alerts = conn.execute(f"""
+        SELECT symbol, signal_date, close, per_chg, volume FROM volume_breakouts
+        WHERE symbol IN ({placeholders}) AND signal_date = ?
+        ORDER BY per_chg DESC
+    """, (*syms, today)).fetchall()
+    conn.close()
+    return [{"symbol": r[0], "date": r[1], "close": r[2], "pct_chg": r[3], "volume": r[4]} for r in alerts]
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

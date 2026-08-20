@@ -596,6 +596,13 @@ def _extract_from_text(page_text: str) -> dict[str, float | None]:
 
 # ── Result builder (shared) ───────────────────────────────────────────────────
 
+def _rule_confidence(revenue_cr, pat_cr, ebitda_cr, eps) -> str:
+    filled = sum(1 for v in (revenue_cr, pat_cr, ebitda_cr, eps) if v is not None)
+    if filled >= 3: return "high"
+    if filled >= 1: return "medium"
+    return "low"
+
+
 def _build_result(
     extracted:    dict[str, float | None],
     unit_mult:    float,
@@ -696,6 +703,7 @@ def _build_result(
         dividend_per_share = dividend,
         key_highlights     = highlights,
         raw_summary        = raw_summary,
+        confidence         = _rule_confidence(revenue_cr, pat_cr, ebitda_cr, eps),
     )
 
 

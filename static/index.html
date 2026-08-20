@@ -8,118 +8,183 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* ── Design tokens ── */
     :root {
-      --bg:        #0d1117;
-      --surface:   #161b22;
-      --border:    #30363d;
-      --accent:    #238636;
-      --accent2:   #1f6feb;
-      --text:      #e6edf3;
-      --muted:     #8b949e;
-      --user-bg:   #1f6feb1a;
-      --bot-bg:    #161b22;
-      --tag-bg:    #21262d;
+      --bg:        #080c12;
+      --surface:   #0d1620;
+      --border:    #1c2e44;
+      --accent:    #f0a500;   /* amber — market signal primary */
+      --accent2:   #3b82f6;  /* blue — interactive / focus */
+      --text:      #dde6f0;
+      --muted:     #7a90a8;
+      --user-bg:   #0d2040;
+      --bot-bg:    #0d1620;
+      --tag-bg:    #121d2d;
     }
 
-    html, body { height: 100%; background: var(--bg); color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 14px; line-height: 1.6; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+      font-size: 13.5px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
 
     /* ── Layout ── */
     .layout { display: flex; height: 100vh; }
 
     /* ── Sidebar ── */
     .sidebar {
-      width: 256px; min-width: 256px;
-      background: var(--surface); border-right: 1px solid var(--border);
+      width: 262px; min-width: 262px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
       display: flex; flex-direction: column;
-      padding: 18px 12px; gap: 16px; overflow-y: auto;
+      padding: 0; gap: 0; overflow-y: auto;
     }
-    .logo { display: flex; align-items: center; gap: 10px;
-      padding-bottom: 14px; border-bottom: 1px solid var(--border); }
-    .logo-icon { width: 34px; height: 34px;
-      background: linear-gradient(135deg, #238636, #1f6feb);
-      border-radius: 8px; display: flex; align-items: center;
-      justify-content: center; font-size: 18px; }
-    .logo-text { font-weight: 700; font-size: 15px; }
-    .logo-sub  { font-size: 11px; color: var(--muted); }
 
-    .section-title { font-size: 11px; font-weight: 600; color: var(--muted);
-      text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+    .logo {
+      display: flex; align-items: center; gap: 11px;
+      padding: 18px 16px 16px;
+    }
+    .logo-icon {
+      width: 34px; height: 34px; flex-shrink: 0;
+      background: linear-gradient(140deg, #f0a500, #e07b00);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 2px 8px rgba(240,165,0,.25);
+    }
+    .logo-text { font-weight: 700; font-size: 14.5px; letter-spacing: -.01em; }
+    .logo-sub  { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
 
-    .chip { display: block; width: 100%; text-align: left;
+    /* Sidebar sections get a top-border separator instead of a label-only gap */
+    .sidebar-section {
+      padding: 14px 14px 10px;
+      border-top: 1px solid var(--border);
+    }
+    .sidebar-section:first-of-type { border-top: none; }
+
+    .section-title {
+      font-size: 10px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .08em;
+      margin-bottom: 9px;
+    }
+
+    .chip {
+      display: block; width: 100%; text-align: left;
       background: var(--tag-bg); border: 1px solid var(--border);
-      border-radius: 6px; padding: 8px 10px; color: var(--text);
-      font-size: 12.5px; cursor: pointer; margin-bottom: 5px;
-      transition: background .15s, border-color .15s; }
-    .chip:hover { background: #1c2128; border-color: var(--accent2); color: #79c0ff; }
+      border-radius: 6px; padding: 7px 10px; color: var(--muted);
+      font-size: 12px; cursor: pointer; margin-bottom: 4px;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    .chip:hover { background: #162030; border-color: var(--accent); color: var(--text); }
 
-    .stats-box { background: var(--tag-bg); border: 1px solid var(--border);
-      border-radius: 8px; padding: 12px; }
-    .stats-row { display: flex; justify-content: space-between;
-      font-size: 12px; padding: 3px 0; color: var(--muted); }
-    .stats-row span:last-child { color: var(--text); font-weight: 600; }
+    .stats-box {
+      background: var(--tag-bg); border: 1px solid var(--border);
+      border-radius: 8px; overflow: hidden;
+    }
+    .stats-row {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11.5px; padding: 7px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .stats-row:last-child { border-bottom: none; }
+    .stats-row span:last-child { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-    .clear-btn { display: block; width: 100%; background: transparent;
-      border: 1px solid var(--border); border-radius: 6px; padding: 8px;
-      color: var(--muted); font-size: 12px; cursor: pointer;
-      transition: border-color .15s, color .15s; margin-top: auto; }
-    .clear-btn:hover { border-color: #f85149; color: #f85149; }
+    /* Sidebar section wrappers (plain <div> children) get consistent padding + separator */
+    .sidebar > div:not(.logo) {
+      padding: 12px 14px 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .clear-btn {
+      display: block; width: calc(100% - 28px); margin: 0 14px 14px;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px;
+      color: var(--muted); font-size: 11.5px; cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+    .clear-btn:hover { border-color: #ef4444; color: #ef4444; }
 
     /* ── Chat main ── */
     .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 
-    .chat-header { padding: 12px 20px; border-bottom: 1px solid var(--border);
-      font-size: 12.5px; color: var(--muted);
+    .chat-header {
+      padding: 10px 20px; border-bottom: 1px solid var(--border);
+      font-size: 12px; color: var(--muted);
       display: flex; align-items: center; gap: 8px;
-      background: var(--surface); }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; }
+      background: var(--surface);
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
 
-    .messages { flex: 1; overflow-y: auto; padding: 24px 20px;
-      display: flex; flex-direction: column; gap: 18px; }
+    .messages {
+      flex: 1; overflow-y: auto; padding: 24px 24px;
+      display: flex; flex-direction: column; gap: 20px;
+    }
 
-    .msg { display: flex; gap: 12px; max-width: 860px; width: 100%; }
+    .msg { display: flex; gap: 12px; max-width: 820px; width: 100%; }
     .msg.user { align-self: flex-end; flex-direction: row-reverse; }
     .msg.bot  { align-self: flex-start; }
 
-    .avatar { width: 30px; height: 30px; min-width: 30px;
-      border-radius: 8px; display: flex; align-items: center;
-      justify-content: center; font-size: 13px; font-weight: 700; }
-    .msg.user .avatar { background: var(--accent2); }
-    .msg.bot  .avatar { background: linear-gradient(135deg,#238636,#1f6feb); }
+    .avatar {
+      width: 28px; height: 28px; min-width: 28px;
+      border-radius: 7px; display: flex; align-items: center;
+      justify-content: center; font-size: 11px; font-weight: 700;
+      letter-spacing: .02em;
+    }
+    .msg.user .avatar { background: var(--accent2); color: #fff; }
+    .msg.bot  .avatar {
+      background: linear-gradient(140deg, #f0a500, #3b82f6);
+      color: #fff;
+    }
 
-    .bubble { padding: 11px 15px; border-radius: 10px;
-      line-height: 1.65; word-break: break-word;
-      max-width: calc(100% - 44px); }
-    .msg.user .bubble { background: var(--user-bg);
-      border: 1px solid #1f6feb33; color: #cdd9e5;
-      border-radius: 10px 2px 10px 10px; }
-    .msg.bot  .bubble { background: var(--bot-bg);
+    .bubble {
+      padding: 10px 14px; border-radius: 10px;
+      line-height: 1.68; word-break: break-word;
+      max-width: calc(100% - 42px);
+    }
+    .msg.user .bubble {
+      background: var(--user-bg);
+      border: 1px solid #3b82f622;
+      color: #c8d8ec;
+      border-radius: 10px 2px 10px 10px;
+    }
+    .msg.bot  .bubble {
+      background: var(--bot-bg);
       border: 1px solid var(--border);
-      border-radius: 2px 10px 10px 10px; }
+      border-radius: 2px 10px 10px 10px;
+    }
 
-    /* Markdown in bubble */
-    .bubble h1,.bubble h2,.bubble h3 { margin: 10px 0 4px; }
+    /* Markdown in bubbles */
+    .bubble h1,.bubble h2,.bubble h3 { margin: 10px 0 4px; letter-spacing: -.01em; }
     .bubble p   { margin: 4px 0; }
     .bubble hr  { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
-    .bubble strong { color: #e6edf3; }
+    .bubble strong { color: var(--text); }
     .bubble em     { color: var(--muted); }
     .bubble small  { color: var(--muted); font-size: 11px; }
     .bubble ul,.bubble ol { padding-left: 18px; margin: 4px 0; }
     .bubble li  { margin: 2px 0; }
-    .bubble code { background: var(--tag-bg); padding: 1px 5px;
-      border-radius: 3px; font-size: 12px; }
-    .bubble pre  { background: var(--tag-bg); padding: 10px;
-      border-radius: 6px; overflow-x: auto; margin: 6px 0; }
-    .bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
-    .bubble th,.bubble td { padding: 6px 10px; border: 1px solid var(--border);
-      text-align: left; }
+    .bubble code {
+      background: var(--tag-bg); padding: 1px 5px;
+      border-radius: 3px; font-size: 11.5px;
+      border: 1px solid var(--border);
+    }
+    .bubble pre  {
+      background: var(--tag-bg); padding: 10px;
+      border-radius: 6px; overflow-x: auto; margin: 6px 0;
+      border: 1px solid var(--border);
+    }
+    .bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 12.5px; }
+    .bubble th,.bubble td { padding: 6px 10px; border: 1px solid var(--border); text-align: left; }
     .bubble th { background: var(--tag-bg); font-weight: 600; }
-    .bubble tr:hover td { background: #1c2128; }
-    .bubble a   { color: #79c0ff; text-decoration: none; }
+    .bubble tr:hover td { background: #162030; }
+    .bubble a   { color: #60a5fa; text-decoration: none; }
     .bubble a:hover { text-decoration: underline; }
 
-    /* Cursor blink while streaming */
+    /* Streaming cursor */
     .streaming-cursor::after {
       content: '▊'; animation: blink .8s step-end infinite; color: var(--accent2);
     }
@@ -127,105 +192,142 @@
 
     /* Typing dots */
     .typing { display: flex; gap: 4px; align-items: center; padding: 6px 0; }
-    .typing span { width: 7px; height: 7px; border-radius: 50%;
-      background: var(--muted); animation: bounce 1.2s infinite ease-in-out; }
+    .typing span {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--muted); animation: bounce 1.2s infinite ease-in-out;
+    }
     .typing span:nth-child(2) { animation-delay: .2s; }
     .typing span:nth-child(3) { animation-delay: .4s; }
-    @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+    @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-5px); } }
 
     /* Intent badge */
-    .badge { display: inline-block; font-size: 10px; padding: 2px 8px;
-      border-radius: 10px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: .05em; margin-bottom: 8px; }
-    .badge-order_win     { background: #238636; color: #fff; }
-    .badge-financials    { background: #1f6feb; color: #fff; }
-    .badge-announcements { background: #9333ea; color: #fff; }
-    .badge-all           { background: #f59e0b; color: #000; }
+    .badge {
+      display: inline-block; font-size: 10px; padding: 2px 8px;
+      border-radius: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; margin-bottom: 8px;
+    }
+    .badge-order_win     { background: #16532420; color: #4ade80; border: 1px solid #22c55e40; }
+    .badge-financials    { background: #1d4ed820; color: #60a5fa; border: 1px solid #3b82f640; }
+    .badge-announcements { background: #6d28d920; color: #c084fc; border: 1px solid #9333ea40; }
+    .badge-all           { background: #92400e20; color: #fbbf24; border: 1px solid #f59e0b40; }
+    .badge-multi_hop     { background: #6d28d9; color: #fff; }
 
     /* Web search indicator */
     .web-badge {
       display: inline-flex; align-items: center; gap: 5px;
       font-size: 10px; padding: 2px 8px; border-radius: 10px;
-      background: #0d9488; color: #fff; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .05em;
+      background: #0d948820; color: #2dd4bf; border: 1px solid #0d948840;
+      font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
       margin-left: 6px; margin-bottom: 8px;
     }
     .web-badge .spin {
       display: inline-block; width: 10px; height: 10px;
-      border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+      border: 2px solid rgba(45,212,191,.3); border-top-color: #2dd4bf;
       border-radius: 50%; animation: spin .7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .web-badge.done .spin { display: none; }
 
     /* Welcome */
-    .welcome { text-align: center; margin: auto; padding: 40px 20px; }
-    .welcome h2 { font-size: 22px; margin-bottom: 8px; }
-    .welcome p  { color: var(--muted); max-width: 460px; margin: 0 auto; }
+    .welcome { text-align: center; margin: auto; padding: 40px 20px; max-width: 460px; }
+    .welcome h2 { font-size: 21px; font-weight: 700; margin-bottom: 8px; letter-spacing: -.02em; }
+    .welcome p  { color: var(--muted); font-size: 13.5px; line-height: 1.7; }
 
     /* Input area */
-    .input-area { padding: 14px 20px; border-top: 1px solid var(--border);
-      background: var(--surface); }
+    .input-area {
+      padding: 13px 20px; border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
     .input-row { display: flex; gap: 10px; align-items: flex-end; }
-    #msg-input { flex: 1; background: var(--bg);
+    #msg-input {
+      flex: 1; background: var(--bg);
       border: 1px solid var(--border); border-radius: 8px;
-      padding: 10px 14px; color: var(--text); font-size: 14px;
+      padding: 10px 14px; color: var(--text); font-size: 13.5px;
       resize: none; min-height: 42px; max-height: 140px;
-      outline: none; transition: border-color .15s; font-family: inherit; }
-    #msg-input:focus { border-color: var(--accent2); }
+      outline: none; transition: border-color .15s, box-shadow .15s;
+      font-family: inherit; line-height: 1.5;
+    }
+    #msg-input:focus {
+      border-color: var(--accent2);
+      box-shadow: 0 0 0 3px rgba(59,130,246,.12);
+    }
     #msg-input::placeholder { color: var(--muted); }
-    #send-btn { background: var(--accent2); border: none; border-radius: 8px;
+    #send-btn {
+      background: var(--accent2); border: none; border-radius: 8px;
       padding: 10px 18px; color: white; font-size: 13px; font-weight: 600;
-      cursor: pointer; transition: opacity .15s; height: 42px; white-space: nowrap; }
-    #send-btn:hover   { opacity: .85; }
-    #send-btn:disabled { opacity: .4; cursor: not-allowed; }
+      cursor: pointer; transition: opacity .15s, box-shadow .15s;
+      height: 42px; white-space: nowrap;
+    }
+    #send-btn:hover   { opacity: .9; box-shadow: 0 2px 8px rgba(59,130,246,.3); }
+    #send-btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
     .hint { margin-top: 5px; font-size: 11px; color: var(--muted); }
 
-    ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    /* ── Agent mode toggle ── */
+    #agent-toggle {
+      background: var(--tag-bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 10px; color: var(--muted);
+      font-size: 11.5px; cursor: pointer; transition: all .15s; white-space: nowrap;
+      margin-left: auto;
+    }
+    #agent-toggle:hover  { border-color: #7c3aed; color: #a78bfa; }
+    #agent-toggle.active { background: #2e1065; border-color: #7c3aed; color: #c4b5fd; font-weight: 600; }
+
+    /* ── Agent tool-call steps ── */
+    .agent-steps { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .agent-step {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 11.5px; color: var(--muted); padding: 4px 8px;
+      background: var(--tag-bg); border-radius: 5px; border: 1px solid var(--border);
+    }
+    .agent-step.loading .step-icon { animation: spin .8s linear infinite; display: inline-block; }
+    .agent-step.done    { color: var(--text); border-color: #22c55e40; }
+    .agent-step.done .step-icon { color: #22c55e; }
+    .step-preview { color: var(--muted); font-size: 11px; margin-left: auto; }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: #1c2e44; border-radius: 3px; }
 
     /* ── Power Prompts ── */
     .prompt-tag {
       display: flex; align-items: center; gap: 7px;
       width: 100%; text-align: left;
       background: var(--tag-bg); border: 1px solid var(--border);
-      border-radius: 6px; padding: 7px 10px; color: var(--text);
+      border-radius: 6px; padding: 7px 10px; color: var(--muted);
       font-size: 12px; cursor: pointer; margin-bottom: 4px;
-      transition: background .15s, border-color .15s;
+      transition: background .15s, border-color .15s, color .15s;
     }
-    .prompt-tag:hover { background: #1c2128; border-color: #9333ea; color: #c084fc; }
-    .prompt-tag .ptag-icon { font-size: 14px; flex-shrink: 0; }
+    .prompt-tag:hover { background: #162030; border-color: var(--accent); color: var(--text); }
+    .prompt-tag .ptag-icon { font-size: 13px; flex-shrink: 0; }
     .prompt-tag .ptag-label { font-weight: 600; flex: 1; line-height: 1.3; }
-    .prompt-tag .ptag-arrow { color: var(--muted); font-size: 10px; flex-shrink: 0; }
+    .prompt-tag .ptag-arrow { color: var(--muted); font-size: 10px; flex-shrink: 0; opacity: .6; }
 
     /* ── Tab nav ── */
     .tab-nav {
-      display: flex; gap: 2px;
-      padding: 10px 16px 0; background: var(--surface);
+      display: flex; gap: 0;
+      padding: 0 16px; background: var(--surface);
       border-bottom: 1px solid var(--border);
     }
     .tab-btn {
-      padding: 8px 18px; border: none; border-radius: 6px 6px 0 0;
-      background: transparent; color: var(--muted); font-size: 13px;
-      font-weight: 600; cursor: pointer; letter-spacing: .02em;
-      border-bottom: 2px solid transparent;
+      padding: 11px 16px; border: none; background: transparent;
+      color: var(--muted); font-size: 13px; font-weight: 500;
+      cursor: pointer; letter-spacing: .01em;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
       transition: color .15s, border-color .15s;
     }
-    .tab-btn.active { color: var(--text); border-bottom-color: var(--accent2); }
+    .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
     .tab-btn:hover:not(.active) { color: var(--text); }
 
     /* ── Compare view ── */
-    #compare-view {
-      flex: 1; display: flex; flex-direction: column;
-      overflow: hidden;
-    }
+    #compare-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
     .cmp-controls {
-      padding: 16px 20px; background: var(--surface);
+      padding: 14px 20px; background: var(--surface);
       border-bottom: 1px solid var(--border);
       display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
     }
-    .cmp-controls label { font-size: 12px; color: var(--muted); font-weight: 600;
-      text-transform: uppercase; letter-spacing: .05em; }
+    .cmp-controls label {
+      font-size: 11px; color: var(--muted); font-weight: 700;
+      text-transform: uppercase; letter-spacing: .07em;
+    }
     .cmp-input-wrap { position: relative; flex: 1; min-width: 200px; max-width: 380px; }
     #symbol-input {
       width: 100%; background: var(--bg); border: 1px solid var(--border);
@@ -243,32 +345,32 @@
       cursor: pointer; transition: opacity .15s; white-space: nowrap;
     }
     #load-btn:hover { opacity: .85; }
-    #load-btn:disabled { opacity: .4; cursor: not-allowed; }
+    #load-btn:disabled { opacity: .35; cursor: not-allowed; }
 
     .cmp-body { flex: 1; overflow-y: auto; padding: 20px; }
 
     .cmp-empty {
       text-align: center; color: var(--muted); margin-top: 60px;
-      font-size: 14px; line-height: 2;
+      font-size: 13.5px; line-height: 2;
     }
-    .cmp-empty .cmp-icon { font-size: 40px; display: block; margin-bottom: 12px; }
+    .cmp-empty .cmp-icon { font-size: 38px; display: block; margin-bottom: 12px; opacity: .6; }
 
     .cmp-card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: 10px; overflow: hidden;
     }
     .cmp-card-header {
-      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      padding: 15px 20px; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; justify-content: space-between;
       flex-wrap: wrap; gap: 8px;
     }
-    .cmp-title { font-size: 16px; font-weight: 700; }
-    .cmp-title span { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 6px; }
+    .cmp-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+    .cmp-title span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
     .cmp-meta { font-size: 12px; color: var(--muted); }
     .unit-chip {
-      background: #1f6feb22; border: 1px solid #1f6feb44;
-      color: #79c0ff; border-radius: 4px; padding: 2px 8px;
-      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      background: #1d4ed820; border: 1px solid #3b82f640;
+      color: #60a5fa; border-radius: 4px; padding: 2px 8px;
+      font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
     }
     .src-link {
       display: inline-flex; align-items: center; gap: 4px;
@@ -276,15 +378,15 @@
       border: 1px solid var(--border); border-radius: 4px;
       padding: 2px 8px; transition: color .15s, border-color .15s;
     }
-    .src-link:hover { color: #79c0ff; border-color: #79c0ff; text-decoration: none; }
+    .src-link:hover { color: #60a5fa; border-color: #60a5fa; text-decoration: none; }
     .citations {
       margin-top: 10px; padding-top: 8px;
       border-top: 1px solid var(--border);
       display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
     }
     .citations-label {
-      font-size: 10px; color: var(--muted); font-weight: 600;
-      text-transform: uppercase; letter-spacing: .06em; margin-right: 2px;
+      font-size: 10px; color: var(--muted); font-weight: 700;
+      text-transform: uppercase; letter-spacing: .07em; margin-right: 2px;
     }
 
     .cmp-table-wrap { overflow-x: auto; }
@@ -293,89 +395,90 @@
       font-size: 13px; font-variant-numeric: tabular-nums;
     }
     .cmp-table thead th {
-      padding: 10px 14px; background: var(--tag-bg);
-      color: var(--muted); font-size: 11px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .05em;
+      padding: 9px 14px; background: var(--tag-bg);
+      color: var(--muted); font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
       border-bottom: 1px solid var(--border);
       white-space: nowrap;
     }
     .cmp-table thead th:not(:first-child) { text-align: right; }
-    .cmp-table tbody tr { border-bottom: 1px solid #21262d; }
+    .cmp-table tbody tr { border-bottom: 1px solid #141f2e; }
     .cmp-table tbody tr:last-child { border-bottom: none; }
-    .cmp-table tbody tr:hover td { background: #1c2128; }
+    .cmp-table tbody tr:hover td { background: #162030; }
     .cmp-table td { padding: 9px 14px; }
     .cmp-table td.num { text-align: right; }
     .cmp-table td.label-cell { color: var(--text); max-width: 280px; }
     .cmp-table td.dim { color: var(--muted); }
     .cmp-table tr.section-row td {
       font-weight: 700; color: var(--text);
-      background: var(--tag-bg); font-size: 11.5px;
-      text-transform: uppercase; letter-spacing: .04em;
+      background: var(--tag-bg); font-size: 11px;
+      text-transform: uppercase; letter-spacing: .05em;
       padding: 7px 14px;
     }
 
-    /* column group colouring in headers */
-    .cmp-table thead th.col-group-qoq { background: #1f3a5f44; color: #79c0ff; }
-    .cmp-table thead th.col-group-yoy { background: #2d3a1e44; color: #7ee787; }
+    .cmp-table thead th.col-group-qoq { background: #1d4ed820; color: #60a5fa; }
+    .cmp-table thead th.col-group-yoy { background: #14532420; color: #4ade80; }
     .cmp-table thead th.chg-hdr { font-style: italic; letter-spacing: .08em; }
 
-    .pos { color: #3fb950; font-weight: 600; }
-    .neg { color: #f85149; font-weight: 600; }
+    .pos { color: #22c55e; font-weight: 600; }
+    .neg { color: #ef4444; font-weight: 600; }
     .neu { color: var(--muted); }
-    .arrow-up   { display: inline-block; color: #3fb950; margin-right: 2px; }
-    .arrow-down { display: inline-block; color: #f85149; margin-right: 2px; }
+    .arrow-up   { display: inline-block; color: #22c55e; margin-right: 2px; }
+    .arrow-down { display: inline-block; color: #ef4444; margin-right: 2px; }
 
     .cmp-no-yoy {
-      padding: 14px 20px; font-size: 12px; color: var(--muted);
+      padding: 12px 20px; font-size: 12px; color: var(--muted);
       background: var(--tag-bg); border-top: 1px solid var(--border);
     }
 
     /* ── Results view ── */
-    #results-view {
-      flex: 1; display: flex; flex-direction: column; overflow: hidden;
-    }
+    #results-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
     .res-controls {
-      padding: 12px 20px; background: var(--surface);
+      padding: 11px 20px; background: var(--surface);
       border-bottom: 1px solid var(--border);
-      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
     }
-    .filter-pills { display: flex; gap: 6px; }
+    .filter-pills { display: flex; gap: 5px; }
     .pill {
-      padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      padding: 4px 14px; border-radius: 20px; font-size: 11.5px; font-weight: 600;
       border: 1px solid var(--border); background: transparent;
       color: var(--muted); cursor: pointer; transition: all .15s;
     }
     .pill.active { background: var(--accent2); border-color: var(--accent2); color: #fff; }
     .pill:hover:not(.active) { border-color: var(--accent2); color: var(--text); }
-    .sort-label { font-size: 12px; color: var(--muted); font-weight: 600;
-      text-transform: uppercase; letter-spacing: .05em; margin-left: 12px; }
+    .sort-label {
+      font-size: 11px; color: var(--muted); font-weight: 700;
+      text-transform: uppercase; letter-spacing: .07em; margin-left: 10px;
+    }
     .sort-select {
       background: var(--tag-bg); border: 1px solid var(--border);
-      color: var(--text); border-radius: 6px; padding: 5px 10px;
+      color: var(--text); border-radius: 6px; padding: 4px 10px;
       font-size: 12px; outline: none; cursor: pointer;
     }
     .res-count { font-size: 12px; color: var(--muted); margin-left: auto; }
 
-    .res-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .res-body { flex: 1; overflow-y: auto; padding: 14px 20px; }
 
     table.res-table {
       width: 100%; border-collapse: collapse;
       font-size: 13px; font-variant-numeric: tabular-nums;
     }
     .res-table thead th {
-      padding: 9px 12px; background: var(--tag-bg);
-      color: var(--muted); font-size: 11px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .05em;
+      padding: 8px 12px; background: var(--tag-bg);
+      color: var(--muted); font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
       border-bottom: 1px solid var(--border); white-space: nowrap;
       position: sticky; top: 0; z-index: 1;
     }
     .res-table thead th:not(:first-child):not(:nth-child(2)) { text-align: right; }
-    .res-table tbody tr { border-bottom: 1px solid #21262d; cursor: pointer; }
-    .res-table tbody tr:hover td { background: #1c2128; }
-    .res-table td { padding: 9px 12px; }
+    .res-table tbody tr { border-bottom: 1px solid #141f2e; cursor: pointer; }
+    .res-table tbody tr:hover td { background: #162030; }
+    .res-table td { padding: 8px 12px; }
     .res-table td.sym { font-weight: 700; color: var(--text); white-space: nowrap; }
-    .res-table td.co  { color: var(--muted); font-size: 12px; max-width: 200px;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-table td.co  {
+      color: var(--muted); font-size: 12px; max-width: 200px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     .res-table td.num { text-align: right; }
     .res-table td.per { color: var(--muted); font-size: 12px; white-space: nowrap; }
     .res-table td.dt  { color: var(--muted); font-size: 12px; white-space: nowrap; }
@@ -384,9 +487,331 @@
       border: 1px solid var(--border); background: transparent;
       color: var(--muted); cursor: pointer; transition: all .15s;
     }
-    .res-cmp-btn:hover { border-color: var(--accent2); color: #79c0ff; }
-    .growth-pos { color: #3fb950; font-weight: 600; }
-    .growth-neg { color: #f85149; font-weight: 600; }
+    .res-cmp-btn:hover { border-color: var(--accent2); color: #60a5fa; }
+    .growth-pos { color: #22c55e; font-weight: 600; }
+    .growth-neg { color: #ef4444; font-weight: 600; }
+
+    /* ── Breakouts view ── */
+    #breakouts-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .brk-controls {
+      padding: 11px 20px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+    .brk-sector-input {
+      background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; padding: 5px 10px;
+      font-size: 12px; outline: none; width: 160px;
+      transition: border-color .15s; font-family: inherit;
+    }
+    .brk-sector-input:focus { border-color: var(--accent2); }
+    .brk-sector-input::placeholder { color: var(--muted); }
+
+    .brk-body { flex: 1; overflow-y: auto; padding: 14px 20px; }
+
+    table.brk-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 13px; font-variant-numeric: tabular-nums;
+    }
+    .brk-table thead th {
+      padding: 8px 12px; background: var(--tag-bg);
+      color: var(--muted); font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+      position: sticky; top: 0; z-index: 1;
+      user-select: none;
+    }
+    .brk-table thead th.sortable { cursor: pointer; }
+    .brk-table thead th.sortable:hover { color: var(--text); }
+    .brk-table thead th.sort-asc::after  { content: ' ▲'; color: var(--accent); }
+    .brk-table thead th.sort-desc::after { content: ' ▼'; color: var(--accent); }
+    .brk-table tbody tr { border-bottom: 1px solid #141f2e; cursor: pointer; }
+    .brk-table tbody tr:hover td { background: #162030; }
+    .brk-table td { padding: 8px 12px; vertical-align: middle; }
+    .brk-table td.sym  { font-weight: 700; color: var(--text); white-space: nowrap; }
+    .brk-table td.co   {
+      color: var(--muted); font-size: 12px; max-width: 180px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .brk-table td.dt   { color: var(--muted); font-size: 12px; white-space: nowrap; text-align: center; }
+    .brk-table td.sect {
+      color: var(--muted); font-size: 12px; max-width: 160px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .brk-table td.rsn  { max-width: 300px; font-size: 12px; line-height: 1.5; }
+
+    .cap-chip {
+      display: inline-block; font-size: 10px; padding: 2px 7px;
+      border-radius: 6px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .04em; text-align: center;
+    }
+    .cap-smallcap { background: #92400e20; color: #fbbf24; border: 1px solid #f59e0b40; }
+    .cap-midcap   { background: #1d4ed820; color: #60a5fa; border: 1px solid #3b82f640; }
+    .cap-largecap { background: #14532420; color: #4ade80; border: 1px solid #22c55e40; }
+
+    .reason-chip {
+      display: inline-block; font-size: 10px; padding: 2px 7px;
+      border-radius: 6px; font-weight: 700; letter-spacing: .04em;
+      margin-right: 6px; white-space: nowrap; vertical-align: middle;
+    }
+    .reason-earnings     { background: #1d4ed820; color: #60a5fa; border: 1px solid #3b82f640; }
+    .reason-order        { background: #14532420; color: #4ade80; border: 1px solid #22c55e40; }
+    .reason-announcement { background: #6d28d920; color: #c084fc; border: 1px solid #9333ea40; }
+    .reason-none         { color: var(--muted); font-style: italic; font-size: 12px; }
+
+    .brk-summary {
+      padding: 8px 20px 0; font-size: 12px; color: var(--muted);
+      display: flex; gap: 16px; flex-wrap: wrap;
+    }
+    .brk-summary span b { color: var(--text); }
+
+    /* ── Daily Brief card ── */
+    .brief-card {
+      margin: 0 16px 16px;
+      border-radius: 10px;
+      background: linear-gradient(140deg, #1a1508 0%, #0e1820 60%);
+      border: 1px solid #3a2800;
+      padding: 14px 16px; cursor: pointer;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .brief-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px rgba(240,165,0,.1);
+    }
+    .brief-card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .brief-card-title { font-size: 12.5px; font-weight: 700; color: #f0a500; letter-spacing: -.01em; }
+    .brief-card-date  { font-size: 10.5px; color: var(--muted); }
+    .brief-card-chips { display: flex; gap: 5px; margin-bottom: 9px; flex-wrap: wrap; }
+    .brief-card-chip  {
+      font-size: 10px; padding: 2px 7px; border-radius: 6px; font-weight: 700;
+      background: #92400e20; color: #fbbf24; border: 1px solid #f59e0b30;
+    }
+    .brief-highlights { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+    .brief-highlight  {
+      font-size: 11.5px; color: var(--text); line-height: 1.5;
+      padding-left: 14px; position: relative;
+    }
+    .brief-highlight::before { content: '›'; position: absolute; left: 2px; color: var(--accent); font-weight: 700; }
+    .brief-open-btn {
+      font-size: 11px; color: #fbbf24; background: transparent;
+      border: 1px solid #f59e0b40; border-radius: 5px;
+      padding: 4px 12px; cursor: pointer; transition: background .15s, border-color .15s;
+    }
+    .brief-open-btn:hover { background: #92400e20; border-color: var(--accent); }
+
+    /* ── Brief full panel ── */
+    .brief-panel {
+      position: fixed; top: 0; right: -620px; width: 600px; max-width: 100vw;
+      height: 100%; background: var(--surface);
+      border-left: 1px solid var(--border);
+      z-index: 201; display: flex; flex-direction: column;
+      box-shadow: -8px 0 40px rgba(0,0,0,.6);
+      transition: right .25s cubic-bezier(.4,0,.2,1);
+    }
+    .brief-panel.open { right: 0; }
+    .brief-panel-header {
+      padding: 16px 18px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--bg); flex-shrink: 0;
+    }
+    .brief-panel-title { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: -.01em; }
+    .brief-panel-meta  { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .brief-panel-body  {
+      flex: 1; overflow-y: auto; padding: 22px 24px;
+      font-size: 13.5px; line-height: 1.78;
+    }
+    .brief-panel-body h2 {
+      font-size: 13px; font-weight: 700; margin: 22px 0 8px;
+      padding-bottom: 4px; border-bottom: 1px solid var(--border);
+      letter-spacing: -.01em;
+    }
+    .brief-panel-body h2:first-child { margin-top: 0; }
+    .brief-panel-body ul,.brief-panel-body ol { padding-left: 18px; margin: 6px 0; }
+    .brief-panel-body li { margin: 5px 0; }
+    .brief-panel-body strong { color: var(--text); }
+
+    /* ── Investigation panel ── */
+    .inv-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 200; opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    .inv-backdrop.open { opacity: 1; pointer-events: all; }
+
+    .inv-panel {
+      position: fixed; top: 0; right: -600px; width: 580px; max-width: 100vw;
+      height: 100%; background: var(--surface);
+      border-left: 1px solid var(--border);
+      z-index: 201; display: flex; flex-direction: column;
+      box-shadow: -8px 0 40px rgba(0,0,0,.6);
+      transition: right .25s cubic-bezier(.4,0,.2,1);
+    }
+    .inv-panel.open { right: 0; }
+
+    .inv-header {
+      padding: 15px 18px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      background: var(--bg); flex-shrink: 0;
+    }
+    .inv-title { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -.02em; }
+    .inv-subtitle { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+    .inv-close {
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 6px; color: var(--muted); font-size: 13px;
+      padding: 4px 10px; cursor: pointer; flex-shrink: 0;
+      transition: border-color .15s, color .15s;
+    }
+    .inv-close:hover { border-color: #ef4444; color: #ef4444; }
+
+    .inv-steps {
+      display: flex; align-items: center; gap: 6px;
+      padding: 10px 18px; border-bottom: 1px solid var(--border);
+      background: var(--tag-bg); flex-shrink: 0; flex-wrap: wrap;
+    }
+    .inv-step { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+    .inv-step-icon { font-size: 13px; }
+    .inv-step-label { font-weight: 600; }
+    .inv-step-msg {
+      font-size: 11px; color: var(--muted); max-width: 160px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .inv-step.done .inv-step-label  { color: #22c55e; }
+    .inv-step.done .inv-step-icon::after { content: ' ✓'; font-size: 11px; color: #22c55e; }
+    .inv-step.loading .inv-step-label { color: var(--accent2); }
+    .inv-step.streaming .inv-step-label { color: var(--accent); }
+    .inv-step.error .inv-step-label { color: #ef4444; }
+    .inv-step-sep { color: var(--border); font-size: 16px; }
+
+    .inv-spin {
+      display: inline-block; width: 8px; height: 8px;
+      border: 2px solid rgba(255,255,255,.15); border-top-color: var(--accent2);
+      border-radius: 50%; animation: spin .7s linear infinite;
+      margin-left: 4px;
+    }
+    .inv-step.streaming .inv-spin { border-top-color: var(--accent); }
+
+    .inv-body {
+      flex: 1; overflow-y: auto; padding: 20px 22px;
+      font-size: 13.5px; line-height: 1.72;
+    }
+    .inv-body h2 {
+      font-size: 12px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .08em;
+      margin: 20px 0 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px;
+    }
+    .inv-body h2:first-child { margin-top: 0; }
+    .inv-body p  { margin: 4px 0; }
+    .inv-body ul,.inv-body ol { padding-left: 18px; margin: 4px 0; }
+    .inv-body li { margin: 3px 0; }
+    .inv-body strong { color: var(--text); }
+    .inv-body code {
+      background: var(--tag-bg); padding: 1px 5px;
+      border-radius: 3px; font-size: 12px; border: 1px solid var(--border);
+    }
+
+    .verdict-confirmed  { color: #22c55e; font-weight: 700; }
+    .verdict-partial    { color: var(--accent); font-weight: 700; }
+    .verdict-unconfirmed{ color: #ef4444; font-weight: 700; }
+
+    /* ── Inline follow-up chat ── */
+    .inv-footer {
+      border-top: 1px solid var(--border); background: var(--bg);
+      flex-shrink: 0; display: flex; flex-direction: column;
+    }
+    .inv-followup { display: flex; flex-direction: column; }
+    .inv-chat-thread {
+      max-height: 240px; overflow-y: auto;
+      padding: 10px 18px 4px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .inv-thread-user {
+      align-self: flex-end; background: var(--user-bg);
+      border: 1px solid #3b82f622; border-radius: 10px 2px 10px 10px;
+      padding: 7px 12px; font-size: 12.5px; max-width: 80%; word-break: break-word;
+    }
+    .inv-thread-bot {
+      align-self: flex-start; background: var(--bot-bg);
+      border: 1px solid var(--border); border-radius: 2px 10px 10px 10px;
+      padding: 7px 12px; font-size: 12.5px; max-width: 90%;
+      line-height: 1.6; word-break: break-word;
+    }
+    .inv-thread-bot p { margin: 2px 0; }
+    .inv-thread-bot ul { padding-left: 16px; margin: 2px 0; }
+    .inv-thread-bot strong { color: var(--text); }
+    .inv-chat-input-row {
+      display: flex; gap: 8px; align-items: flex-end;
+      padding: 10px 18px 12px;
+    }
+    #inv-chat-input {
+      flex: 1; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: 8px 12px; color: var(--text);
+      font-size: 13px; resize: none; min-height: 38px; max-height: 100px;
+      outline: none; font-family: inherit; line-height: 1.4;
+      transition: border-color .15s;
+    }
+    #inv-chat-input:focus { border-color: var(--accent2); }
+    #inv-chat-input::placeholder { color: var(--muted); }
+    #inv-send-btn {
+      background: var(--accent2); border: none; border-radius: 7px;
+      width: 36px; height: 36px; color: white; font-size: 16px;
+      cursor: pointer; flex-shrink: 0; transition: opacity .15s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #inv-send-btn:hover { opacity: .85; }
+    #inv-send-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* ── Watchlist ── */
+    .wl-add-row { display: flex; gap: 6px; align-items: center; }
+    .wl-add-btn {
+      background: var(--accent2); border: none; border-radius: 6px;
+      padding: 6px 14px; color: #fff; font-size: 12.5px;
+      cursor: pointer; white-space: nowrap; font-weight: 600;
+      transition: opacity .15s;
+    }
+    .wl-add-btn:hover { opacity: .85; }
+    .wl-alert-btn {
+      background: transparent; border: 1px solid var(--border); border-radius: 6px;
+      padding: 5px 12px; color: var(--muted); font-size: 12px;
+      cursor: pointer; white-space: nowrap; transition: all .15s;
+    }
+    .wl-alert-btn:hover { border-color: var(--accent2); color: var(--text); }
+    .wl-alert-btn.enabled { border-color: #22c55e; color: #22c55e; }
+    .wl-remove-btn {
+      background: transparent; border: none; color: var(--muted);
+      font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+      transition: color .15s;
+    }
+    .wl-remove-btn:hover { color: #ef4444; }
+    .wl-alerts-banner {
+      background: #14532420; border: 1px solid #22c55e; border-radius: 8px;
+      padding: 10px 14px; margin: 8px 16px; font-size: 13px; color: #4ade80;
+    }
+    .wl-alerts-banner strong { color: #86efac; }
+
+    /* ── Compare overlay ── */
+    .cmp-overlay-panel {
+      position: fixed; top: 0; right: -660px; width: 640px; max-width: 100vw;
+      height: 100%; background: var(--surface); border-left: 1px solid var(--border);
+      z-index: 201; display: flex; flex-direction: column;
+      box-shadow: -8px 0 40px rgba(0,0,0,.6);
+      transition: right .25s cubic-bezier(.4,0,.2,1);
+    }
+    .cmp-overlay-panel.open { right: 0; }
+    .cmp-overlay-header {
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--bg); flex-shrink: 0;
+    }
+    .cmp-overlay-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+    .cmp-overlay-body  { flex: 1; overflow-y: auto; padding: 18px 20px; }
+    .inv-placeholder {
+      text-align: center; color: var(--muted); margin-top: 40px;
+      font-size: 13px; line-height: 2;
+    }
+    .inv-placeholder .inv-pl-icon { font-size: 34px; display: block; margin-bottom: 10px; opacity: .6; }
   </style>
 </head>
 <body>
@@ -430,19 +855,22 @@
     <!-- Tab nav -->
     <div class="tab-nav">
       <button class="tab-btn active" id="tab-chat" onclick="switchTab('chat')">💬 Chat</button>
-      <button class="tab-btn" id="tab-compare" onclick="switchTab('compare')">📊 Compare</button>
       <button class="tab-btn" id="tab-results" onclick="switchTab('results')">📈 Results</button>
+      <button class="tab-btn" id="tab-breakouts" onclick="switchTab('breakouts')">⚡ Breakouts</button>
+      <button class="tab-btn" id="tab-watchlist" onclick="switchTab('watchlist')">⭐ Watchlist</button>
     </div>
 
     <!-- Chat view -->
     <div id="chat-view" style="display:flex; flex-direction:column; flex:1; min-height:0;">
       <div class="chat-header">
         <div class="dot"></div>
-        Retrieval + Ollama qwen2.5:14b · Ask anything about BSE/NSE announcements
+        <span id="chat-mode-label">RAG · Retrieval + Ollama llama3</span>
+        <button id="agent-toggle" onclick="toggleAgentMode()" title="Switch to Tool Agent mode — LLM picks tools and iterates">⚡ Agent Mode</button>
       </div>
 
       <div class="messages" id="messages">
         <div class="welcome" id="welcome">
+          <div id="brief-card-slot"></div>
           <h2>EP News AI Assistant</h2>
           <p>Retrieves relevant announcements from 3,800+ filings, then uses a local
              LLM to answer your question. Try the suggestions on the left or ask anything.</p>
@@ -459,7 +887,8 @@
     </div>
 
     <!-- Results view -->
-    <div id="results-view" style="display:none; flex:1; flex-direction:column; min-height:0;">
+    <div id="results-view" style="display:none; flex:1; flex-direction:column; min-height:0; overflow-y:auto;">
+      <!-- Financial Results section -->
       <div class="res-controls">
         <div class="filter-pills">
           <button class="pill active" id="pill-7"  onclick="setDays(7)">7 days</button>
@@ -472,9 +901,10 @@
           <option value="revenue">Revenue ↓</option>
           <option value="pat">PAT ↓</option>
         </select>
+        <input id="res-search" class="brk-sector-input" placeholder="Search symbol / company…" oninput="filterResults()" style="min-width:180px;" />
         <span class="res-count" id="res-count"></span>
       </div>
-      <div class="res-body">
+      <div class="res-body" style="flex:0 0 auto; overflow-x:auto;">
         <table class="res-table">
           <thead>
             <tr>
@@ -494,30 +924,119 @@
           <span class="cmp-icon">📈</span>No results found for this filter.
         </div>
       </div>
+
+      <!-- P&L Compare section (inline, below results) -->
+      <div style="border-top:1px solid var(--border); margin-top:8px; padding-top:8px;">
+        <div class="cmp-controls">
+          <label>P&amp;L Compare</label>
+          <div class="cmp-input-wrap">
+            <span class="cmp-search-icon">⌕</span>
+            <input id="symbol-input" list="symbol-list"
+                   placeholder="e.g. RATNAVEER, TCS, INFY…"
+                   autocomplete="off"
+                   oninput="onSymbolInput()" />
+            <datalist id="symbol-list"></datalist>
+          </div>
+          <button id="load-btn" onclick="loadComparison()">Load</button>
+        </div>
+        <div class="cmp-body" id="cmp-body">
+          <div class="cmp-empty">
+            <span class="cmp-icon">📊</span>
+            Select a stock above to view its quarterly P&amp;L comparison.<br>
+            <small>Current quarter vs same quarter last year · % change highlighted</small>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Compare view -->
-    <div id="compare-view" style="display:none; flex:1; flex-direction:column; min-height:0;">
-      <div class="cmp-controls">
-        <label>Stock</label>
-        <div class="cmp-input-wrap">
-          <span class="cmp-search-icon">⌕</span>
-          <input id="symbol-input" list="symbol-list"
-                 placeholder="e.g. RATNAVEER, TCS, INFY…"
-                 autocomplete="off"
-                 oninput="onSymbolInput()" />
-          <datalist id="symbol-list"></datalist>
+    <!-- Breakouts view -->
+    <div id="breakouts-view" style="display:none; flex:1; flex-direction:column; min-height:0;">
+      <div class="brk-controls">
+        <div class="filter-pills">
+          <button class="pill active" id="brk-pill-14" onclick="setBrkDays(14)">14 days</button>
+          <button class="pill"        id="brk-pill-30" onclick="setBrkDays(30)">30 days</button>
+          <button class="pill"        id="brk-pill-0"  onclick="setBrkDays(0)">All time</button>
         </div>
-        <button id="load-btn" onclick="loadComparison()">Load</button>
+        <span class="sort-label" style="margin-left:8px;">Cap</span>
+        <div class="filter-pills">
+          <button class="pill active" id="brk-cap-all"   onclick="setBrkCap('')">All</button>
+          <button class="pill"        id="brk-cap-small" onclick="setBrkCap('smallcap')">Small</button>
+          <button class="pill"        id="brk-cap-mid"   onclick="setBrkCap('midcap')">Mid</button>
+          <button class="pill"        id="brk-cap-large" onclick="setBrkCap('largecap')">Large</button>
+        </div>
+        <input id="brk-sector" class="brk-sector-input" placeholder="Filter sector…" oninput="debounceBrk()" />
+        <span class="res-count" id="brk-count"></span>
       </div>
-      <div class="cmp-body" id="cmp-body">
-        <div class="cmp-empty">
-          <span class="cmp-icon">📊</span>
-          Select a stock above to view its quarterly P&amp;L comparison.<br>
-          <small>Current quarter vs same quarter last year · % change highlighted</small>
+
+      <!-- reason-type legend -->
+      <div class="brk-summary" id="brk-legend" style="display:none;">
+        <span><span class="reason-chip reason-earnings">📊 Earnings</span> quarterly result near signal</span>
+        <span><span class="reason-chip reason-order">📦 Order</span> order win near signal</span>
+        <span><span class="reason-chip reason-announcement">📋 Event</span> other BSE/NSE filing</span>
+        <span><span class="reason-none">— no DB match</span> not in our DB (web news / technicals)</span>
+      </div>
+
+      <div class="brk-body">
+        <div id="brk-loading" class="cmp-empty" style="display:none">
+          <span class="cmp-icon">⏳</span>Loading breakouts…
         </div>
+        <div id="brk-empty" style="display:none" class="cmp-empty">
+          <span class="cmp-icon">⚡</span>No breakouts found for this filter.
+        </div>
+        <table class="brk-table" id="brk-table" style="display:none;">
+          <thead>
+            <tr>
+              <th class="sortable" style="text-align:left" onclick="sortBrk('symbol')">Symbol</th>
+              <th style="text-align:left">Company</th>
+              <th class="sortable sort-desc" id="brk-th-signal_date" onclick="sortBrk('signal_date')">Signal Date</th>
+              <th class="sortable" id="brk-th-marketcap" onclick="sortBrk('marketcap')">Cap</th>
+              <th class="sortable" style="text-align:left" id="brk-th-sector" onclick="sortBrk('sector')">Sector</th>
+              <th class="sortable" id="brk-th-close" onclick="sortBrk('close')" style="text-align:right">Close</th>
+              <th class="sortable" id="brk-th-per_chg" onclick="sortBrk('per_chg')" style="text-align:right">Chg%</th>
+              <th class="sortable" style="text-align:left" id="brk-th-reason_type" onclick="sortBrk('reason_type')">Reason</th>
+              <th class="sortable" id="brk-th-reason_date" onclick="sortBrk('reason_date')">Event Date</th>
+            </tr>
+          </thead>
+          <tbody id="brk-tbody"></tbody>
+        </table>
       </div>
     </div>
+
+    <!-- Watchlist view -->
+    <div id="watchlist-view" style="display:none; flex:1; flex-direction:column; min-height:0; overflow:hidden;">
+      <div class="brk-controls" style="align-items:center; gap:10px;">
+        <span class="section-title" style="margin:0;">⭐ Watchlist</span>
+        <div class="wl-add-row">
+          <input id="wl-input" class="brk-sector-input" placeholder="Add symbol (e.g. RELIANCE)" maxlength="20"
+                 onkeydown="if(event.key==='Enter') addWatchlistSymbol()" style="min-width:180px;" />
+          <button class="wl-add-btn" onclick="addWatchlistSymbol()">+ Add</button>
+        </div>
+        <button class="wl-alert-btn" onclick="requestNotifPermission()" id="wl-notif-btn" title="Enable desktop alerts for today's breakout signals">🔔 Enable Alerts</button>
+        <span class="res-count" id="wl-count"></span>
+      </div>
+      <div id="wl-alerts-banner" class="wl-alerts-banner" style="display:none;"></div>
+      <div class="brk-body">
+        <div id="wl-empty" class="cmp-empty" style="display:none;">
+          <span class="cmp-icon">⭐</span>Add symbols to your watchlist to track them here.
+        </div>
+        <table class="brk-table" id="wl-table" style="display:none;">
+          <thead>
+            <tr>
+              <th style="text-align:left">Symbol</th>
+              <th style="text-align:left">Latest Result</th>
+              <th style="text-align:right">PAT Cr</th>
+              <th style="text-align:right">PAT Growth</th>
+              <th style="text-align:left">Latest Breakout</th>
+              <th style="text-align:right">Close</th>
+              <th style="text-align:right">Chg%</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="wl-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -525,8 +1044,9 @@
   marked.setOptions({ breaks: true, gfm: true });
 
   // ── State ──────────────────────────────────────────────────────────────────
-  let loading  = false;
-  let history  = [];   // [{role:"user"/"assistant", content:"..."}]
+  let loading    = false;
+  let history    = [];   // [{role:"user"/"assistant", content:"..."}]
+  let _agentMode = false;
 
   // ── Init ───────────────────────────────────────────────────────────────────
   async function init() {
@@ -569,6 +1089,7 @@
         pp.appendChild(b);
       });
     } catch(e) { console.warn('init error', e); }
+    loadBrief();   // fetch and render Today's Brief card if available
   }
 
   // ── Power Prompt definitions ───────────────────────────────────────────────
@@ -651,8 +1172,12 @@
 
   function setBadge(bubble, intent, sources, meta) {
     const labels = {
-      order_win: '📦 Order Wins', financials: '📊 Financials',
-      announcements: '📋 Announcements', all: '🔍 All Sources',
+      order_win:    '📦 Order Wins',
+      financials:   '📊 Financials',
+      announcements:'📋 Announcements',
+      all:          '🔍 All Sources',
+      volume_breakout: '⚡ Breakouts',
+      multi_hop:    '🔀 Multi-hop',
     };
     const badgeRow = document.createElement('div');
     badgeRow.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:8px;';
@@ -733,6 +1258,64 @@
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
+  // ── Agent mode toggle ─────────────────────────────────────────────────────
+  function toggleAgentMode() {
+    _agentMode = !_agentMode;
+    const btn   = document.getElementById('agent-toggle');
+    const label = document.getElementById('chat-mode-label');
+    btn.classList.toggle('active', _agentMode);
+    if (_agentMode) {
+      btn.textContent = '⚡ Agent ON';
+      label.textContent = 'Tool Agent · LLM picks tools and iterates';
+    } else {
+      btn.textContent = '⚡ Agent Mode';
+      label.textContent = 'RAG · Retrieval + Ollama llama3';
+    }
+  }
+
+  // ── Tool step helpers (agent mode) ────────────────────────────────────────
+  const _TOOL_ICONS = {
+    search_orders:       '📦',
+    search_financials:   '📊',
+    search_announcements:'📣',
+    search_breakouts:    '⚡',
+    aggregate_orders:    '🔢',
+  };
+
+  function _getOrCreateSteps(bubble) {
+    let steps = bubble.querySelector('.agent-steps');
+    if (!steps) {
+      steps = document.createElement('div');
+      steps.className = 'agent-steps';
+      bubble.insertBefore(steps, bubble.firstChild);
+    }
+    return steps;
+  }
+
+  function _addStep(bubble, tool, args) {
+    const steps = _getOrCreateSteps(bubble);
+    const icon  = _TOOL_ICONS[tool] || '🔍';
+    const argStr = Object.entries(args || {})
+      .filter(([,v]) => v !== null && v !== undefined)
+      .map(([k,v]) => `${k}=${v}`).join(' ');
+    const el = document.createElement('div');
+    el.className   = 'agent-step loading';
+    el.dataset.tool = tool;
+    el.innerHTML    =
+      `<span class="step-icon">⟳</span>`+
+      `<strong>${icon} ${tool}</strong>`+
+      (argStr ? `<span style="color:var(--muted);font-size:10.5px">(${escHtml(argStr)})</span>` : '')+
+      `<span class="step-preview">searching…</span>`;
+    steps.appendChild(el);
+    return el;
+  }
+
+  function _doneStep(el, count, preview) {
+    el.classList.replace('loading', 'done');
+    el.querySelector('.step-icon').textContent = '✓';
+    el.querySelector('.step-preview').textContent = preview || `${count} results`;
+  }
+
   // ── Send ───────────────────────────────────────────────────────────────────
   async function sendMessage() {
     const input = document.getElementById('msg-input');
@@ -749,10 +1332,11 @@
     let fullAnswer = '';
 
     try {
-      const res = await fetch('/api/chat', {
+      const endpoint = _agentMode ? '/api/chat/agent' : '/api/chat';
+      const res = await fetch(endpoint, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: msg, history: history.slice(-4), n: 8 }),
+        body:    JSON.stringify({ message: msg, history: history.slice(-6), n: 8 }),
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -760,6 +1344,7 @@
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
       let   buffer  = '';
+      const stepEls = {};  // tool → DOM element
 
       while (true) {
         const { done, value } = await reader.read();
@@ -767,20 +1352,28 @@
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
-        buffer = lines.pop();   // keep incomplete line
+        buffer = lines.pop();
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           const payload = line.slice(6).trim();
           if (!payload) continue;
-
           let ev;
           try { ev = JSON.parse(payload); } catch { continue; }
 
-          if (ev.type === 'meta') {
+          if (ev.type === 'status') {
+            // Show live status in the typing indicator while waiting for Ollama
+            const typing = bubble.querySelector('.typing');
+            if (typing) {
+              typing.innerHTML = `<span style="color:var(--muted);font-size:11px;animation:blink 1.2s step-end infinite">⟳</span>&nbsp;<span style="color:var(--muted);font-size:11px;">${escHtml(ev.text)}</span>`;
+            }
+          } else if (ev.type === 'meta') {
             setBadge(bubble, ev.intent, ev.sources || [], ev);
+          } else if (ev.type === 'tool_call') {
+            stepEls[ev.tool] = _addStep(bubble, ev.tool, ev.args);
+          } else if (ev.type === 'tool_result') {
+            if (stepEls[ev.tool]) _doneStep(stepEls[ev.tool], ev.count, ev.preview);
           } else if (ev.type === 'token') {
-            // First token arriving means web search returned → mark done
             if (!bubble._firstToken) {
               bubble._firstToken = true;
               markWebDone(bubble);
@@ -788,15 +1381,15 @@
             appendToken(bubble, ev.text);
             fullAnswer += ev.text;
           } else if (ev.type === 'done') {
-            markWebDone(bubble);  // ensure badge resolved even if 0 tokens
+            markWebDone(bubble);
             break;
           }
         }
       }
 
       finalizeBot(bubble);
+      if (_agentMode) setBadge(bubble, 'agent', [], {});
 
-      // Update conversation history
       history.push({ role: 'user',      content: msg });
       history.push({ role: 'assistant', content: fullAnswer });
       if (history.length > 20) history = history.slice(-20);
@@ -829,18 +1422,460 @@
     inp.style.height = Math.min(inp.scrollHeight, 140) + 'px';
   });
 
+  // ── Daily Brief ───────────────────────────────────────────────────────────
+  let _briefContent = '';
+
+  async function loadBrief() {
+    try {
+      const res  = await fetch('/api/brief');
+      const data = await res.json();
+      if (!data.available) return;   // no brief yet — card stays hidden
+
+      _briefContent = data.content || '';
+      const slot = document.getElementById('brief-card-slot');
+      if (!slot) return;
+
+      const dateLabel = data.date
+        ? new Date(data.date).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })
+        : '';
+      const chips = [
+        data.ann_count ? `${data.ann_count} announcements` : '',
+      ].filter(Boolean);
+
+      const highlights = (data.highlights || []).slice(0, 3);
+
+      slot.innerHTML = `
+        <div class="brief-card" onclick="openBrief()">
+          <div class="brief-card-header">
+            <span class="brief-card-title">📰 Today's Market Brief</span>
+            <span class="brief-card-date">${escHtml(dateLabel)}</span>
+          </div>
+          ${chips.length ? `<div class="brief-card-chips">${chips.map(c => `<span class="brief-card-chip">${escHtml(c)}</span>`).join('')}</div>` : ''}
+          <div class="brief-highlights">
+            ${highlights.map(h => `<div class="brief-highlight">${escHtml(h)}</div>`).join('')}
+            ${!highlights.length ? '<div class="brief-highlight" style="color:var(--muted)">Brief generated — click to read</div>' : ''}
+          </div>
+          <button class="brief-open-btn">View Full Brief ↗</button>
+        </div>`;
+    } catch(e) { /* brief unavailable — fail silently */ }
+  }
+
+  function openBrief() {
+    document.getElementById('brief-panel-meta').textContent =
+      'Generated by Daily Brief Agent · Auto-updated after market close';
+    document.getElementById('brief-panel-body').innerHTML =
+      _briefContent ? marked.parse(_briefContent)
+                    : '<div class="inv-placeholder"><span class="inv-pl-icon">⏳</span>Loading…</div>';
+    document.getElementById('brief-backdrop').classList.add('open');
+    document.getElementById('brief-panel').classList.add('open');
+  }
+
+  function closeBrief() {
+    document.getElementById('brief-backdrop').classList.remove('open');
+    document.getElementById('brief-panel').classList.remove('open');
+  }
+
+  // ── Breakouts tab ─────────────────────────────────────────────────────────
+  window._breakoutsLoaded = false;
+  window._brkDays = 14;
+  window._brkCap  = '';
+  window._brkData = [];
+  window._brkSort = { col: 'signal_date', dir: -1 };  // -1 = desc, 1 = asc
+  let _brkTimer   = null;
+
+  const _CAP_ORDER    = { largecap: 3, midcap: 2, smallcap: 1 };
+  const _REASON_ORDER = { earnings: 4, order: 3, announcement: 2, null: 1 };
+
+  function _brkVal(r, col) {
+    if (col === 'marketcap')   return _CAP_ORDER[(r.marketcap || '').toLowerCase()] || 0;
+    if (col === 'reason_type') return _REASON_ORDER[r.reason_type] || 0;
+    return (r[col] || '').toLowerCase();
+  }
+
+  function sortBrk(col) {
+    const s = window._brkSort;
+    // Same column → toggle direction; new column → desc first
+    s.dir = (s.col === col) ? -s.dir : -1;
+    s.col = col;
+    // Update header indicators
+    const sortableCols = ['symbol','signal_date','marketcap','sector','reason_type','reason_date'];
+    sortableCols.forEach(c => {
+      const th = document.getElementById('brk-th-' + c);
+      if (!th) return;
+      th.classList.remove('sort-asc','sort-desc');
+      if (c === col) th.classList.add(s.dir === 1 ? 'sort-asc' : 'sort-desc');
+    });
+    // Also handle symbol th (no id, find by position)
+    const allThs = document.querySelectorAll('.brk-table thead th');
+    if (allThs[0]) {
+      allThs[0].classList.remove('sort-asc','sort-desc');
+      if (col === 'symbol') allThs[0].classList.add(s.dir === 1 ? 'sort-asc' : 'sort-desc');
+    }
+    // Sort and re-render rows only (no fetch)
+    const sorted = [...window._brkData].sort((a, b) => {
+      const av = _brkVal(a, col), bv = _brkVal(b, col);
+      if (av < bv) return -s.dir;
+      if (av > bv) return  s.dir;
+      return 0;
+    });
+    _renderBrkRows(sorted);
+  }
+
+  function setBrkDays(d) {
+    window._brkDays = d;
+    ['14','30','0'].forEach(x =>
+      document.getElementById('brk-pill-' + x).classList.toggle('active', String(x) === String(d)));
+    loadBreakouts();
+  }
+
+  function setBrkCap(cap) {
+    window._brkCap = cap;
+    ['all','small','mid','large'].forEach(x =>
+      document.getElementById('brk-cap-' + x).classList.toggle('active', x === (cap || 'all')));
+    loadBreakouts();
+  }
+
+  function debounceBrk() {
+    clearTimeout(_brkTimer);
+    _brkTimer = setTimeout(loadBreakouts, 350);
+  }
+
+  async function loadBreakouts() {
+    const sector = (document.getElementById('brk-sector')?.value || '').trim();
+    const days   = window._brkDays;
+    const cap    = window._brkCap;
+
+    document.getElementById('brk-loading').style.display = '';
+    document.getElementById('brk-empty').style.display   = 'none';
+    document.getElementById('brk-table').style.display   = 'none';
+    document.getElementById('brk-legend').style.display  = 'none';
+    document.getElementById('brk-count').textContent     = '';
+
+    try {
+      let url = `/api/breakouts?days=${days}`;
+      if (cap)    url += `&marketcap=${encodeURIComponent(cap)}`;
+      if (sector) url += `&sector=${encodeURIComponent(sector)}`;
+
+      const res  = await fetch(url);
+      const data = await res.json();
+      window._brkData = data;
+      renderBreakoutsTable(data);
+      window._breakoutsLoaded = true;
+    } catch(e) {
+      document.getElementById('brk-loading').style.display = 'none';
+      console.warn('breakouts error', e);
+    }
+  }
+
+  const BRK_REASON_LABEL = {
+    earnings: '📊 Earnings', order: '📦 Order', announcement: '📋 Event',
+  };
+
+  function renderBreakoutsTable(rows) {
+    document.getElementById('brk-loading').style.display = 'none';
+    const empty = document.getElementById('brk-empty');
+    const table = document.getElementById('brk-table');
+
+    document.getElementById('brk-count').textContent = rows.length + ' stocks';
+
+    if (!rows.length) {
+      document.getElementById('brk-tbody').innerHTML = '';
+      empty.style.display = '';
+      table.style.display = 'none';
+      return;
+    }
+
+    empty.style.display = 'none';
+    table.style.display = '';
+    document.getElementById('brk-legend').style.display = '';
+
+    // Apply current sort to freshly fetched data
+    const s = window._brkSort;
+    const sorted = [...rows].sort((a, b) => {
+      const av = _brkVal(a, s.col), bv = _brkVal(b, s.col);
+      if (av < bv) return -s.dir;
+      if (av > bv) return  s.dir;
+      return 0;
+    });
+    _renderBrkRows(sorted);
+  }
+
+  function _renderBrkRows(rows) {
+    document.getElementById('brk-tbody').innerHTML = rows.map(r => {
+      const cap     = (r.marketcap || '').toLowerCase();
+      const capChip = cap
+        ? `<span class="cap-chip cap-${escHtml(cap)}">${escHtml(r.marketcap)}</span>`
+        : '<span style="color:var(--muted)">—</span>';
+
+      let reasonHtml;
+      if (r.reason_type) {
+        const chipCls   = 'reason-' + r.reason_type;
+        const chipLabel = BRK_REASON_LABEL[r.reason_type] || r.reason_type;
+        const txt       = (r.reason_text || '').slice(0, 100) + (r.reason_text?.length > 100 ? '…' : '');
+        reasonHtml = `<span class="reason-chip ${escHtml(chipCls)}">${chipLabel}</span>${escHtml(txt)}`;
+      } else {
+        reasonHtml = `<span class="reason-none">— no DB match</span>`;
+      }
+
+      const closeStr  = r.close   != null ? Number(r.close).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—';
+      const chgStr    = r.per_chg != null ? r.per_chg.toFixed(2) + '%' : '—';
+      const chgCls    = r.per_chg == null ? '' : r.per_chg >= 0 ? 'growth-pos' : 'growth-neg';
+      const chgArrow  = r.per_chg == null ? '' : r.per_chg >= 0 ? '▲' : '▼';
+
+      return `<tr onclick="askBreakout('${escHtml(r.symbol)}','${escHtml(r.signal_date||'')}','${escHtml(r.sector||'')}','${escHtml(r.marketcap||'')}')">
+        <td class="sym">${escHtml(r.symbol)}</td>
+        <td class="co">${escHtml(r.company)}</td>
+        <td class="dt">${escHtml(r.signal_date || '')}</td>
+        <td style="text-align:center">${capChip}</td>
+        <td class="sect">${escHtml(r.sector || '')}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${closeStr}</td>
+        <td style="text-align:right" class="${chgCls}">${r.per_chg != null ? chgArrow : ''}${chgStr}</td>
+        <td class="rsn">${reasonHtml}</td>
+        <td class="dt">${escHtml(r.reason_date || '—')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function askBreakout(symbol, signalDate, sector, marketcap) {
+    openInvestigation(symbol, signalDate, sector, marketcap);
+  }
+
+  // ── Investigation panel ────────────────────────────────────────────────────
+  let _invReader   = null;   // active SSE reader
+  let _invSymbol   = '';
+  let _invDate     = '';
+  let _invRawText  = '';     // accumulates LLM tokens for "Ask in Chat"
+
+  function openInvestigation(symbol, signalDate, sector, marketcap) {
+    _invSymbol  = symbol;
+    _invDate    = signalDate || '';
+    _invRawText = '';
+
+    // Header
+    document.getElementById('inv-title').textContent = symbol;
+    document.getElementById('inv-subtitle').textContent =
+      [marketcap, sector, signalDate ? 'Signal: ' + signalDate : ''].filter(Boolean).join(' · ');
+
+    // Reset steps
+    ['db','web','llm'].forEach(s => {
+      const el = document.getElementById('inv-step-' + s);
+      el.className = 'inv-step';
+      document.getElementById('inv-msg-' + s).textContent = 'waiting…';
+    });
+
+    // Reset body
+    document.getElementById('inv-body').innerHTML =
+      '<div class="inv-placeholder"><span class="inv-pl-icon">⏳</span>Starting investigation…</div>';
+    document.getElementById('inv-followup').style.display = 'none';
+    document.getElementById('inv-chat-thread').innerHTML = '';
+
+    // Open panel
+    document.getElementById('inv-backdrop').classList.add('open');
+    document.getElementById('inv-panel').classList.add('open');
+
+    // Cancel any prior stream
+    if (_invReader) { try { _invReader.cancel(); } catch(_) {} }
+
+    // Start SSE
+    const url = `/api/investigate/${encodeURIComponent(symbol)}`
+      + (signalDate ? `?signal_date=${encodeURIComponent(signalDate)}` : '');
+
+    fetch(url).then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      _invReader = res.body.getReader();
+      return _streamInvestigation(_invReader);
+    }).catch(err => {
+      document.getElementById('inv-body').innerHTML =
+        `<span style="color:#f85149">⚠️ Error: ${escHtml(err.message)}</span>`;
+    });
+  }
+
+  async function _streamInvestigation(reader) {
+    const decoder = new TextDecoder();
+    let buffer    = '';
+    let mdRaw     = '';
+    let bodyReady = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (!payload) continue;
+
+        let ev;
+        try { ev = JSON.parse(payload); } catch { continue; }
+
+        if (ev.type === 'step') {
+          _updateStep(ev.step, ev.status, ev.msg || '');
+          // Company name arrives with DB done event
+          if (ev.step === 'db' && ev.status === 'done' && ev.company) {
+            const sub = document.getElementById('inv-subtitle');
+            if (!sub.textContent.includes(ev.company) && ev.company) {
+              sub.textContent = ev.company + ' · ' + sub.textContent;
+            }
+          }
+          if (ev.step === 'llm' && (ev.status === 'streaming' || ev.status === 'loading')) {
+            if (!bodyReady) {
+              document.getElementById('inv-body').innerHTML =
+                '<div id="inv-md" class="streaming-cursor"></div>';
+              bodyReady = true;
+            }
+          }
+        } else if (ev.type === 'token') {
+          if (!bodyReady) {
+            document.getElementById('inv-body').innerHTML =
+              '<div id="inv-md" class="streaming-cursor"></div>';
+            bodyReady = true;
+          }
+          mdRaw += ev.text;
+          _invRawText += ev.text;
+          const md = document.getElementById('inv-md');
+          if (md) md.innerHTML = marked.parse(mdRaw);
+          document.getElementById('inv-body').scrollTop =
+            document.getElementById('inv-body').scrollHeight;
+        } else if (ev.type === 'error') {
+          document.getElementById('inv-body').innerHTML =
+            `<span style="color:#f85149">⚠️ ${escHtml(ev.msg)}</span>`;
+        } else if (ev.type === 'done') {
+          const md = document.getElementById('inv-md');
+          if (md) {
+            md.classList.remove('streaming-cursor');
+            md.innerHTML = marked.parse(mdRaw);
+            _styleVerdicts(md);
+          }
+          _updateStep('llm', 'done', 'Complete');
+          document.getElementById('inv-followup').style.display = '';
+          break;
+        }
+      }
+    }
+  }
+
+  function _updateStep(step, status, msg) {
+    const el  = document.getElementById('inv-step-' + step);
+    const msg_el = document.getElementById('inv-msg-' + step);
+    el.className = 'inv-step ' + status;
+
+    // Spinner for loading/streaming states
+    const hasSpinner = !!el.querySelector('.inv-spin');
+    if ((status === 'loading' || status === 'streaming') && !hasSpinner) {
+      const lbl = el.querySelector('.inv-step-label');
+      if (lbl && !lbl.querySelector('.inv-spin')) {
+        lbl.insertAdjacentHTML('beforeend', '<span class="inv-spin"></span>');
+      }
+    } else if (status === 'done' || status === 'error') {
+      el.querySelectorAll('.inv-spin').forEach(s => s.remove());
+    }
+
+    msg_el.textContent = msg;
+  }
+
+  function _styleVerdicts(container) {
+    // Colour the CONFIRMED / PARTIAL / UNCONFIRMED keywords
+    container.querySelectorAll('p, li').forEach(el => {
+      el.innerHTML = el.innerHTML
+        .replace(/\bCONFIRMED\b/g,   '<span class="verdict-confirmed">CONFIRMED</span>')
+        .replace(/\bPARTIAL\b/g,     '<span class="verdict-partial">PARTIAL</span>')
+        .replace(/\bUNCONFIRMED\b/g, '<span class="verdict-unconfirmed">UNCONFIRMED</span>');
+    });
+  }
+
+  function closeInvestigation() {
+    document.getElementById('inv-backdrop').classList.remove('open');
+    document.getElementById('inv-panel').classList.remove('open');
+    if (_invReader) { try { _invReader.cancel(); } catch(_) {} _invReader = null; }
+  }
+
+  // ── Inline follow-up chat inside investigation panel ─────────────────────
+  async function sendInvChat() {
+    const input = document.getElementById('inv-chat-input');
+    const msg   = (input.value || '').trim();
+    if (!msg) return;
+    input.value = '';
+
+    const thread = document.getElementById('inv-chat-thread');
+
+    // User bubble
+    const uBubble = document.createElement('div');
+    uBubble.className = 'inv-thread-user';
+    uBubble.textContent = msg;
+    thread.appendChild(uBubble);
+    thread.scrollTop = thread.scrollHeight;
+
+    // Bot bubble
+    const bBubble = document.createElement('div');
+    bBubble.className = 'inv-thread-bot';
+    bBubble.textContent = '…';
+    thread.appendChild(bBubble);
+
+    // Seed context with the investigation result so LLM knows what we analyzed
+    const seed = _invRawText
+      ? [{ role: 'assistant', content: `[Investigation of ${_invSymbol}]\n${_invRawText.slice(0, 1200)}` }]
+      : [];
+
+    document.getElementById('inv-send-btn').disabled = true;
+    let reply = '';
+    try {
+      const res = await fetch('/api/chat', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ message: msg, history: seed, n: 5 }),
+      });
+      const reader = res.body.getReader();
+      const dec    = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const ev = JSON.parse(line.slice(5).trim());
+            if (ev.type === 'token' && ev.text) {
+              reply += ev.text;
+              bBubble.textContent = reply;
+              thread.scrollTop = thread.scrollHeight;
+            }
+          } catch(_) {}
+        }
+      }
+    } catch(e) {
+      bBubble.textContent = 'Error: ' + e.message;
+    } finally {
+      document.getElementById('inv-send-btn').disabled = false;
+    }
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  // Close panel on Escape
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeInvestigation();
+  });
+
   init();
 
   // ── Tab switching ─────────────────────────────────────────────────────────
   function switchTab(tab) {
-    ['chat','compare','results'].forEach(t => {
+    ['chat','results','breakouts','watchlist'].forEach(t => {
       document.getElementById(t + '-view').style.display = 'none';
       document.getElementById('tab-' + t).classList.remove('active');
     });
     document.getElementById(tab + '-view').style.display = 'flex';
     document.getElementById('tab-' + tab).classList.add('active');
-    if (tab === 'compare' && !window._symbolsLoaded) loadSymbols();
-    if (tab === 'results'  && !window._resultsLoaded)  loadResults();
+    if (tab === 'results'   && !window._resultsLoaded)    loadResults();
+    if (tab === 'results'   && !window._symbolsLoaded)    loadSymbols();
+    if (tab === 'breakouts' && !window._breakoutsLoaded)  loadBreakouts();
+    if (tab === 'watchlist')                               loadWatchlist();
   }
 
   // ── Results tab ───────────────────────────────────────────────────────────
@@ -878,11 +1913,32 @@
     return `<span class="${cls}">${arrow}${Math.abs(v).toFixed(1)}%</span>`;
   }
 
+  let _resData = [];
+
+  function filterResults() {
+    const q = (document.getElementById('res-search').value || '').trim().toLowerCase();
+    const filtered = q
+      ? _resData.filter(r =>
+          (r.symbol  || '').toLowerCase().includes(q) ||
+          (r.company || '').toLowerCase().includes(q))
+      : _resData;
+    _renderResRows(filtered);
+  }
+
   function renderResultsTable(rows) {
+    _resData = rows;
+    document.getElementById('res-search').value = '';
     const tbody = document.getElementById('res-tbody');
     const empty = document.getElementById('res-empty');
     document.getElementById('res-count').textContent = rows.length + ' companies';
 
+    _renderResRows(rows);
+  }
+
+  function _renderResRows(rows) {
+    const tbody = document.getElementById('res-tbody');
+    const empty = document.getElementById('res-empty');
+    document.getElementById('res-count').textContent = rows.length + ' companies';
     if (!rows.length) {
       tbody.innerHTML = '';
       empty.style.display = '';
@@ -903,9 +1959,139 @@
   }
 
   function goCompare(symbol) {
-    switchTab('compare');
-    document.getElementById('symbol-input').value = symbol;
-    loadComparison();
+    openCmpOverlay(symbol);
+  }
+
+  // ── Watchlist tab ─────────────────────────────────────────────────────────
+
+  async function loadWatchlist() {
+    try {
+      const [wlRes, alertsRes] = await Promise.all([
+        fetch('/api/watchlist'),
+        fetch('/api/watchlist/alerts'),
+      ]);
+      const items  = await wlRes.json();
+      const alerts = await alertsRes.json();
+
+      const count = document.getElementById('wl-count');
+      count.textContent = `${items.length} symbol${items.length !== 1 ? 's' : ''}`;
+
+      // Show alerts banner
+      const banner = document.getElementById('wl-alerts-banner');
+      if (alerts.length) {
+        banner.style.display = '';
+        banner.innerHTML = `<strong>⚡ Today's Breakout Alerts (${alerts.length})</strong><br>` +
+          alerts.map(a => `<strong>${a.symbol}</strong> ₹${a.close} <span style="color:${a.pct_chg>=0?'#3fb950':'#f85149'}">${a.pct_chg>=0?'+':''}${a.pct_chg?.toFixed(2)}%</span>`).join(' &nbsp;·&nbsp; ');
+        // Push browser notification if permission granted
+        if (Notification.permission === 'granted') {
+          alerts.forEach(a => {
+            new Notification(`EP News: ${a.symbol} breakout`, {
+              body: `₹${a.close}  ${a.pct_chg>=0?'+':''}${a.pct_chg?.toFixed(2)}% today`,
+              icon: '/static/favicon.ico',
+            });
+          });
+        }
+      } else {
+        banner.style.display = 'none';
+      }
+
+      const tbody = document.getElementById('wl-tbody');
+      const table = document.getElementById('wl-table');
+      const empty = document.getElementById('wl-empty');
+      tbody.innerHTML = '';
+      if (!items.length) {
+        table.style.display = 'none';
+        empty.style.display = '';
+        return;
+      }
+      table.style.display = '';
+      empty.style.display = 'none';
+
+      items.forEach(item => {
+        const f  = item.financials;
+        const b  = item.breakout;
+        const tr = document.createElement('tr');
+        const chg = b?.pct_chg;
+        const chgCell = b ? `<span style="color:${chg>=0?'#3fb950':'#f85149'}">${chg>=0?'+':''}${chg?.toFixed(2)}%</span>` : '—';
+        tr.innerHTML = `
+          <td><strong style="color:var(--accent2)">${item.symbol}</strong></td>
+          <td style="color:var(--muted);font-size:12px">${f ? f.period : '—'}</td>
+          <td style="text-align:right">${f?.pat_cr != null ? '₹' + f.pat_cr.toLocaleString('en-IN', {maximumFractionDigits:0}) : '—'}</td>
+          <td style="text-align:right">${f?.pat_growth_pct != null ? (f.pat_growth_pct>=0?'+':'')+f.pat_growth_pct.toFixed(1)+'%' : '—'}</td>
+          <td style="color:var(--muted);font-size:12px">${b ? b.date : '—'}</td>
+          <td style="text-align:right">${b?.close != null ? '₹'+b.close.toFixed(2) : '—'}</td>
+          <td style="text-align:right">${chgCell}</td>
+          <td><button class="wl-remove-btn" onclick="removeWatchlist('${item.symbol}')">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch(e) { console.error('watchlist load error', e); }
+  }
+
+  async function addWatchlistSymbol() {
+    const input = document.getElementById('wl-input');
+    const sym = input.value.trim().toUpperCase();
+    if (!sym) return;
+    await fetch('/api/watchlist', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({symbol: sym}),
+    });
+    input.value = '';
+    loadWatchlist();
+  }
+
+  async function removeWatchlist(sym) {
+    await fetch('/api/watchlist/' + sym, { method: 'DELETE' });
+    loadWatchlist();
+  }
+
+  async function requestNotifPermission() {
+    if (!('Notification' in window)) { alert('Your browser does not support notifications.'); return; }
+    const perm = await Notification.requestPermission();
+    const btn = document.getElementById('wl-notif-btn');
+    if (perm === 'granted') {
+      btn.textContent = '🔔 Alerts On';
+      btn.classList.add('enabled');
+    } else {
+      btn.textContent = '🔕 Blocked';
+    }
+  }
+
+  // Reflect current notification permission on page load
+  window.addEventListener('DOMContentLoaded', () => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      const btn = document.getElementById('wl-notif-btn');
+      if (btn) { btn.textContent = '🔔 Alerts On'; btn.classList.add('enabled'); }
+    }
+  });
+
+  // ── Compare overlay (P&L slide-in over Results tab) ──────────────────────
+  async function openCmpOverlay(symbol) {
+    const title = document.getElementById('cmp-overlay-title');
+    const body  = document.getElementById('cmp-overlay-body');
+    title.textContent = symbol + ' — P&L Comparison';
+    body.innerHTML = '<div class="cmp-empty"><span class="cmp-icon">⏳</span>Loading…</div>';
+
+    document.getElementById('cmp-overlay-backdrop').classList.add('open');
+    document.getElementById('cmp-overlay-panel').classList.add('open');
+
+    try {
+      const res  = await fetch('/api/compare?symbol=' + encodeURIComponent(symbol));
+      const data = await res.json();
+      if (data.error) {
+        body.innerHTML = `<div class="cmp-empty"><span class="cmp-icon">⚠️</span>${escHtml(data.error)}</div>`;
+        return;
+      }
+      renderCompareTable(data, body);
+    } catch(e) {
+      body.innerHTML = `<div class="cmp-empty"><span class="cmp-icon">⚠️</span>Error: ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  function closeCmpOverlay() {
+    document.getElementById('cmp-overlay-backdrop').classList.remove('open');
+    document.getElementById('cmp-overlay-panel').classList.remove('open');
   }
 
   // ── Compare: load symbol list ─────────────────────────────────────────────
@@ -1082,5 +2268,86 @@
       </div>`;
   }
 </script>
+
+<!-- ── Daily Brief slide-in panel ── -->
+<div class="inv-backdrop" id="brief-backdrop" onclick="closeBrief()"></div>
+<div class="brief-panel" id="brief-panel">
+  <div class="brief-panel-header">
+    <div>
+      <div class="brief-panel-title">📰 Daily Market Brief</div>
+      <div class="brief-panel-meta" id="brief-panel-meta"></div>
+    </div>
+    <button class="inv-close" onclick="closeBrief()">✕ Close</button>
+  </div>
+  <div class="brief-panel-body" id="brief-panel-body">
+    <div class="inv-placeholder"><span class="inv-pl-icon">📰</span>Loading…</div>
+  </div>
+</div>
+
+<!-- ── Investigation slide-in panel ── -->
+<div class="inv-backdrop" id="inv-backdrop" onclick="closeInvestigation()"></div>
+<div class="inv-panel" id="inv-panel">
+
+  <div class="inv-header">
+    <div>
+      <div class="inv-title" id="inv-title">Investigating…</div>
+      <div class="inv-subtitle" id="inv-subtitle"></div>
+    </div>
+    <button class="inv-close" onclick="closeInvestigation()">✕ Close</button>
+  </div>
+
+  <div class="inv-steps" id="inv-steps">
+    <div class="inv-step" id="inv-step-db">
+      <span class="inv-step-icon">🔍</span>
+      <span class="inv-step-label">DB Search</span>
+      <span class="inv-step-msg" id="inv-msg-db">waiting…</span>
+    </div>
+    <div class="inv-step-sep">›</div>
+    <div class="inv-step" id="inv-step-web">
+      <span class="inv-step-icon">🌐</span>
+      <span class="inv-step-label">Web News</span>
+      <span class="inv-step-msg" id="inv-msg-web">waiting…</span>
+    </div>
+    <div class="inv-step-sep">›</div>
+    <div class="inv-step" id="inv-step-llm">
+      <span class="inv-step-icon">🤖</span>
+      <span class="inv-step-label">Analysis</span>
+      <span class="inv-step-msg" id="inv-msg-llm">waiting…</span>
+    </div>
+  </div>
+
+  <div class="inv-body" id="inv-body">
+    <div class="inv-placeholder">
+      <span class="inv-pl-icon">⚡</span>
+      Click a row in the Breakouts table to investigate a stock.
+    </div>
+  </div>
+
+  <div class="inv-footer">
+    <div class="inv-followup" id="inv-followup" style="display:none">
+      <div class="inv-chat-thread" id="inv-chat-thread"></div>
+      <div class="inv-chat-input-row">
+        <textarea id="inv-chat-input" placeholder="Ask a follow-up about this stock…" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendInvChat();}"></textarea>
+        <button id="inv-send-btn" onclick="sendInvChat()">↑</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Compare overlay panel (shown over Results tab) ── -->
+<div class="inv-backdrop" id="cmp-overlay-backdrop" onclick="closeCmpOverlay()"></div>
+<div class="cmp-overlay-panel" id="cmp-overlay-panel">
+  <div class="cmp-overlay-header">
+    <div>
+      <div class="cmp-overlay-title" id="cmp-overlay-title">P&amp;L Comparison</div>
+    </div>
+    <button class="inv-close" onclick="closeCmpOverlay()">✕ Close</button>
+  </div>
+  <div class="cmp-overlay-body" id="cmp-overlay-body">
+    <div class="cmp-empty"><span class="cmp-icon">⏳</span>Loading…</div>
+  </div>
+</div>
+
 </body>
 </html>

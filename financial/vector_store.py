@@ -225,7 +225,13 @@ class VectorStore:
     """
 
     def __init__(self, chroma_path: Path | str) -> None:
+        import os
         import chromadb
+
+        # Force ONNX embeddings to CPU to avoid competing with Ollama for VRAM.
+        # Set ONNX_DEVICE=cuda in .env to use GPU embeddings instead.
+        onnx_device = os.getenv("ONNX_DEVICE", "cpu")
+        os.environ.setdefault("ONNX_DEVICE", onnx_device)
 
         path = Path(chroma_path)
         path.mkdir(parents=True, exist_ok=True)

@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from api.chat_handler import ChatHandler
 
 _OLLAMA_BASE_URL = "http://localhost:11434/v1"
-_TEXT_MODEL      = os.getenv("OLLAMA_TEXT_MODEL", "llama3:latest")
+_TEXT_MODEL      = os.getenv("OLLAMA_TEXT_MODEL", "llama3.1:latest")
 _WEB_TIMEOUT     = int(os.getenv("WEB_SEARCH_TIMEOUT", "8"))   # seconds
 
 
@@ -70,6 +70,7 @@ Rules:
 - For recent events (last few days): web news may be more current than our DB
 - NEVER invent numbers — only use what the context provides
 - Use Indian number format (Rs. Cr)
+- CONVERSATION HISTORY is shown only to understand follow-up references (e.g. "those companies", "that stock") — it is NOT a data source. Never include results from a prior answer in the current response unless the DATABASE CONTEXT or WEB NEWS for this turn also contains them.
 - Today's date is {today}"""
 
 ep_agent: Agent[EPDeps, str] = Agent(
@@ -138,7 +139,12 @@ def stream_dual_agent(
     user_prompt = (
         f"Today is {date.today().strftime('%d %B %Y')}.\n\n"
         + combined
-        + (f"\n\nCONVERSATION HISTORY:{hist_text}\n" if hist_text else "")
+        + (
+            f"\n\nCONVERSATION HISTORY (for follow-up context only — "
+            f"do NOT carry results from prior answers into this response; "
+            f"the DATABASE CONTEXT above is the sole data source):{hist_text}\n"
+            if hist_text else ""
+        )
         + f"\n\nQUESTION: {message}"
     )
 

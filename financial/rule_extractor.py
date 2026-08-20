@@ -26,6 +26,21 @@ def _to_crore(value: float, unit: str) -> float:
     return round(value, 2)   # already crore
 
 
+def _parse_months(duration: str) -> int | None:
+    """Convert '12 months' / '18 weeks' / '6 months' to integer months."""
+    if not duration:
+        return None
+    m = re.search(r'(\d+)\s*(month|week|year)', duration, re.IGNORECASE)
+    if not m:
+        return None
+    n, unit = int(m.group(1)), m.group(2).lower()
+    if "week" in unit:
+        return round(n / 4.3)
+    if "year" in unit:
+        return n * 12
+    return n
+
+
 def _parse_amount(val_str: str, unit: str) -> float | None:
     try:
         return _to_crore(float(val_str.replace(",", "")), unit)
@@ -167,14 +182,19 @@ def extract_order_win_from_table(
     )
 
     return FinancialResult(
-        symbol         = symbol,
-        company        = company,
-        period         = broadcast_dt[:10],
-        period_type    = "order_win",
-        source_url     = source_url,
-        broadcast_dt   = broadcast_dt,
-        key_highlights = highlights,
-        raw_summary    = summary,
+        symbol           = symbol,
+        company          = company,
+        period           = broadcast_dt[:10],
+        period_type      = "order_win",
+        source_url       = source_url,
+        broadcast_dt     = broadcast_dt,
+        order_value_cr   = value_cr,
+        client_name      = client if client != "not disclosed" else None,
+        client_type      = client_type,
+        order_sector     = sector_str,
+        execution_months = _parse_months(duration),
+        key_highlights   = highlights,
+        raw_summary      = summary,
     )
 
 
@@ -242,14 +262,18 @@ def extract_order_win(
     )
 
     return FinancialResult(
-        symbol         = symbol,
-        company        = company,
-        period         = broadcast_dt[:10],
-        period_type    = "order_win",
-        source_url     = source_url,
-        broadcast_dt   = broadcast_dt,
-        key_highlights = highlights,
-        raw_summary    = summary,
+        symbol           = symbol,
+        company          = company,
+        period           = broadcast_dt[:10],
+        period_type      = "order_win",
+        source_url       = source_url,
+        broadcast_dt     = broadcast_dt,
+        order_value_cr   = order_cr,
+        client_type      = client_type,
+        order_sector     = sector_str,
+        execution_months = _parse_months(duration),
+        key_highlights   = highlights,
+        raw_summary      = summary,
     )
 
 

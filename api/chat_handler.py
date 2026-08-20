@@ -36,7 +36,9 @@ if _os.getenv("LANGSMITH_API_KEY"):
         pass
 
 
-_OLLAMA_MODEL = "llama3:latest"
+from api.retrieval_graph import build_retrieval_graph, RetrievalState
+
+_OLLAMA_MODEL = "llama3.1:latest"
 
 _SYSTEM_PROMPT = """You are an equity research analyst at an Indian stockbroker.
 Answer questions about BSE/NSE corporate announcements using ONLY the data provided in the context below.
@@ -61,6 +63,10 @@ Rules:
 _ORDER_KW = {
     "order", "orders", "contract", "contracts", "win", "wins",
     "bagged", "awarded", "l1", "work order", "supply order", "loa",
+}
+_BREAKOUT_KW = {
+    "breakout", "breakouts", "hvy", "volume", "surge", "signal", "signals",
+    "5%", "move", "momentum", "spike", "highest volume",
 }
 _FINANCIAL_KW = {
     "revenue", "profit", "pat", "quarterly", "quarter", "results",
@@ -157,6 +163,8 @@ def _detect_intent(text: str) -> str:
     # Split on ALL non-alphanumeric chars so "financial/earnings" → {"financial","earnings"}
     tl   = set(re.split(r'\W+', text.lower()))
     full = text.lower()
+    if tl & _BREAKOUT_KW and not (tl & _ORDER_KW) and not (tl & _FINANCIAL_KW):
+        return "volume_breakout"
     if tl & _ORDER_KW or any(k in full for k in ["work order", "order win"]):
         if not (tl & _FINANCIAL_KW):
             return "order_win"
@@ -572,6 +580,50 @@ def _build_context(results: list[dict], intent: str, min_cr: float | None = None
                 if len(after_colon) > 20:
                     lines.append(f"   Summary      : {after_colon[:150]}")
 
+    elif intent == "multi_hop":
+        cond_labels = results[0].get("_conditions", []) if results else []
+        lines.append(
+            f"MULTI-HOP SCREENER — {len(results)} stocks matching ALL conditions: "
+            + " + ".join(f"[{c}]" for c in cond_labels)
+        )
+        lines.append("IMPORTANT: List every stock below. Each one satisfies ALL conditions.")
+        lines.append("")
+        for r in results:
+            lines.append(f"Stock: {r['symbol']} ({r.get('company', '')})")
+            for cond in cond_labels:
+                data = r.get(f"_data_{cond}", {})
+                if cond == "breakout":
+                    lines.append(f"  Breakout signal : {data.get('signal_date','?')} | {data.get('sector','')} | {data.get('marketcap','')}")
+                elif cond == "order":
+                    oval = data.get("order_value_cr")
+                    val  = f" Rs.{oval:,.0f} Cr" if oval and oval > 0 else ""
+                    lines.append(f"  Order win       :{val} on {str(data.get('broadcast_dt',''))[:10]}")
+                elif cond == "financial":
+                    rev  = data.get("revenue_cr")
+                    rg   = data.get("revenue_growth_pct")
+                    pat  = data.get("pat_cr")
+                    pg   = data.get("pat_growth_pct")
+                    bits = []
+                    if rev and rev > 0:       bits.append(f"Rev Rs.{rev:,.0f}Cr")
+                    if rg and rg > -900:      bits.append(f"Rev {rg:+.1f}%")
+                    if pat:                   bits.append(f"PAT Rs.{pat:,.0f}Cr")
+                    if pg and pg > -900:      bits.append(f"PAT {pg:+.1f}%")
+                    lines.append(f"  Financials      : " + " | ".join(bits) + f" [{data.get('period','')}]")
+            lines.append("")
+
+    elif intent == "volume_breakout":
+        sectors  = sorted({r.get("sector", "") for r in results if r.get("sector")})
+        caps     = sorted({r.get("marketcap", "") for r in results if r.get("marketcap")})
+        dates    = sorted({str(r.get("signal_date", ""))[:10] for r in results if r.get("signal_date")})
+        date_rng = f"{dates[0]} to {dates[-1]}" if len(dates) > 1 else (dates[0] if dates else "")
+        lines.append(f"VOLUME BREAKOUT SIGNALS — {len(results)} stocks | {date_rng}")
+        lines.append(f"Sectors: {', '.join(sectors[:8])} | Caps: {', '.join(caps)}")
+        lines.append("")
+        for r in results:
+            lines.append(
+                f"  {r['symbol']:14} {r.get('marketcap',''):10} {r.get('sector',''):30} {str(r.get('signal_date',''))[:10]}"
+            )
+
     else:  # announcements or all
         ann_dates2 = sorted({str(r.get("broadcast_dt", ""))[:10] for r in results if r.get("broadcast_dt")})
         date_note2 = (
@@ -627,6 +679,7 @@ class ChatHandler:
         }
         self._name_to_symbol: dict[str, str] = _build_name_to_symbol(_conn)
         _conn.close()
+        self._graph = build_retrieval_graph(self)
 
     def _extract_company_symbol(self, text: str) -> str | None:
         """
@@ -807,7 +860,10 @@ class ChatHandler:
                 params.append(sector)
         min_filter = ""
         if min_cr and min_cr > 0:
-            min_filter = "AND (ow.order_value_cr IS NULL OR ow.order_value_cr >= ?)"
+            # Strict: require a disclosed value that actually meets the threshold.
+            # The old IS NULL clause caused every undisclosed-value order to pass,
+            # flooding results with irrelevant PDFs as sources.
+            min_filter = "AND ow.order_value_cr >= ?"
             params.append(min_cr)
         rows = conn.execute(f"""
             SELECT ow.symbol, ow.company, ow.order_value_cr, ow.client_name, ow.client_type,
@@ -947,6 +1003,298 @@ class ChatHandler:
             for r in rows
         ]
 
+    # ── Volume breakout queries ───────────────────────────────────────────────
+
+    def _sql_volume_breakouts(
+        self,
+        sector:    str | None = None,
+        marketcap: str | None = None,
+        symbol:    str | None = None,
+        from_dt:   str | None = None,
+        to_dt:     str | None = None,
+        n:         int = 50,
+    ) -> list[dict]:
+        """Return volume breakout signals filtered by sector/cap/symbol/date."""
+        conn   = sqlite3.connect(str(self._db_path))
+        where  = []
+        params: list = []
+        if symbol:
+            where.append("symbol = ?");               params.append(symbol.upper())
+        if sector:
+            where.append("LOWER(sector) LIKE ?");     params.append(f"%{sector.lower()}%")
+        if marketcap:
+            where.append("LOWER(marketcap) = ?");     params.append(marketcap.lower())
+        if from_dt:
+            where.append("signal_date >= ?");         params.append(str(from_dt))
+        if to_dt:
+            where.append("signal_date <= ?");         params.append(str(to_dt))
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        rows = conn.execute(f"""
+            SELECT symbol, signal_date, marketcap, sector
+            FROM volume_breakouts
+            {where_sql}
+            ORDER BY signal_date DESC
+            LIMIT ?
+        """, params + [n]).fetchall()
+        conn.close()
+        return [
+            {
+                "symbol":       r[0],
+                "signal_date":  r[1],
+                "marketcap":    r[2],
+                "sector":       r[3],
+                "_type":        "volume_breakout",
+                "broadcast_dt": r[1],
+            }
+            for r in rows
+        ]
+
+    # ── Multi-hop screener ────────────────────────────────────────────────────
+
+    # Condition-type keyword sets (distinct from the single-intent sets above)
+    _MULTI_COND = [
+        ("breakout",   {"breakout", "breakouts", "hvy", "volume", "surge", "spike", "momentum"}),
+        ("order",      {"order", "orders", "contract", "win", "wins", "bagged", "awarded", "loa"}),
+        ("financial",  {"revenue", "profit", "pat", "growth", "results", "earnings", "financial",
+                        "q1", "q2", "q3", "q4", "fy", "quarterly"}),
+        ("capex",      {"capacity", "expansion", "plant", "capex", "invest", "manufacturing",
+                        "greenfield", "brownfield", "facility"}),
+        ("fundraise",  {"qip", "fundrais", "allotment", "preferential", "ncd", "debenture",
+                        "rights issue"}),
+    ]
+    _COMPOUND_SIGNALS = {"and", "both", "also", "plus", "along", "combined", "while", "who"}
+
+    def _is_compound(self, message: str) -> bool:
+        tl = set(re.split(r'\W+', message.lower()))
+        matched = [name for name, kws in self._MULTI_COND if tl & kws]
+        # Compound if 2+ distinct condition types present
+        return len(matched) >= 2
+
+    def _sql_order_wins_multi(
+        self,
+        sector:    str | None = None,
+        marketcap: str | None = None,
+        from_dt:   str | None = None,
+        to_dt:     str | None = None,
+        n:         int = 500,
+    ) -> list[dict]:
+        conn   = sqlite3.connect(str(self._db_path))
+        where  = ["LOWER(subject) LIKE '%order%'"]
+        params: list = []
+        if sector:
+            where.append("(LOWER(sector_tags) LIKE ? OR LOWER(subject) LIKE ?)")
+            params += [f"%{sector.lower()}%", f"%{sector.lower()}%"]
+        if from_dt:
+            where.append("DATE(broadcast_dt) >= ?"); params.append(str(from_dt))
+        if to_dt:
+            where.append("DATE(broadcast_dt) <= ?"); params.append(str(to_dt))
+        rows = conn.execute(f"""
+            SELECT a.symbol, a.company, a.broadcast_dt, a.order_value_cr, a.sector_tags,
+                   vb.marketcap
+            FROM announcements a
+            LEFT JOIN volume_breakouts vb ON vb.symbol = a.symbol
+            WHERE {" AND ".join(where)}
+            GROUP BY a.symbol ORDER BY a.broadcast_dt DESC LIMIT ?
+        """, params + [n]).fetchall()
+        conn.close()
+        return [
+            {
+                "symbol": r[0], "company": r[1] or "",
+                "broadcast_dt": r[2], "order_value_cr": r[3],
+                "sector_tags": r[4] or "", "marketcap": r[5] or "",
+                "_type": "order_win",
+                "_cond": "order",
+            }
+            for r in rows
+        ]
+
+    def _sql_financials_multi(
+        self,
+        sector:          str | None = None,
+        min_rev_growth:  float | None = None,
+        min_pat_growth:  float | None = None,
+        from_dt:         str | None = None,
+        to_dt:           str | None = None,
+        n:               int = 500,
+    ) -> list[dict]:
+        conn   = sqlite3.connect(str(self._db_path))
+        where  = [
+            "period_type NOT IN ('order_win','acquisition','restructuring',"
+            "'credit_rating','cirp','fundraising','buyback','open_offer')"
+        ]
+        params: list = []
+        if sector:
+            where.append("LOWER(COALESCE(fr.sector_tags,'')) LIKE ?")
+            params.append(f"%{sector.lower()}%")
+        if min_rev_growth is not None:
+            where.append("revenue_growth_pct >= ?"); params.append(min_rev_growth)
+        if min_pat_growth is not None:
+            where.append("pat_growth_pct >= ?");     params.append(min_pat_growth)
+        if from_dt:
+            where.append("DATE(broadcast_dt) >= ?"); params.append(str(from_dt))
+        if to_dt:
+            where.append("DATE(broadcast_dt) <= ?"); params.append(str(to_dt))
+        rows = conn.execute(f"""
+            SELECT fr.symbol, fr.company, fr.period,
+                   fr.revenue_cr, fr.pat_cr, fr.revenue_growth_pct, fr.pat_growth_pct,
+                   fr.broadcast_dt
+            FROM financial_results fr
+            WHERE {" AND ".join(where)}
+            ORDER BY broadcast_dt DESC LIMIT ?
+        """, params + [n]).fetchall()
+        conn.close()
+        return [
+            {
+                "symbol": r[0], "company": r[1] or "", "period": r[2] or "",
+                "revenue_cr": r[3], "pat_cr": r[4],
+                "revenue_growth_pct": r[5], "pat_growth_pct": r[6],
+                "broadcast_dt": r[7], "_type": "financials", "_cond": "financial",
+            }
+            for r in rows
+        ]
+
+    @staticmethod
+    def _extract_pct_threshold(message: str) -> float | None:
+        m = re.search(
+            r'(?:>|greater than|more than|above|over|atleast|at least)\s*(\d+(?:\.\d+)?)\s*%',
+            message, re.I,
+        )
+        return float(m.group(1)) if m else None
+
+    def _execute_multi_hop(
+        self,
+        message:   str,
+        sector:    str | None,
+        from_dt,
+        to_dt,
+        n:         int = 50,
+    ) -> list[dict]:
+        tl        = set(re.split(r'\W+', message.lower()))
+        pct_thres = self._extract_pct_threshold(message)
+
+        # Detect marketcap filter
+        marketcap = None
+        if tl & {"smallcap", "small", "smallcaps"}:  marketcap = "smallcap"
+        elif tl & {"midcap", "mid", "midcaps"}:       marketcap = "midcap"
+        elif tl & {"largecap", "large", "largecaps"}:  marketcap = "largecap"
+
+        fdt = str(from_dt) if from_dt else None
+        tdt = str(to_dt)   if to_dt   else None
+
+        pools: dict[str, list[dict]] = {}
+
+        if tl & self._MULTI_COND[0][1]:  # breakout
+            pools["breakout"] = self._sql_volume_breakouts(
+                sector=sector, marketcap=marketcap, from_dt=fdt, to_dt=tdt, n=500,
+            )
+        if tl & self._MULTI_COND[1][1]:  # order
+            pools["order"] = self._sql_order_wins_multi(
+                sector=sector, from_dt=fdt, to_dt=tdt, n=500,
+            )
+        if tl & self._MULTI_COND[2][1]:  # financial
+            rev_g = pct_thres if (tl & {"revenue", "rev"}) else None
+            pat_g = pct_thres if (tl & {"profit", "pat"})  else None
+            pools["financial"] = self._sql_financials_multi(
+                sector=sector, min_rev_growth=rev_g, min_pat_growth=pat_g,
+                from_dt=fdt, to_dt=tdt, n=500,
+            )
+        if tl & self._MULTI_COND[3][1]:  # capex
+            pools["capex"] = self._sql_order_wins_multi(
+                sector=sector, from_dt=fdt, to_dt=tdt, n=500,
+            )  # reuse as proxy — announcements with capacity keywords
+
+        if len(pools) < 2:
+            return []
+
+        # Intersect by symbol
+        sym_sets = [set(r["symbol"] for r in rs) for rs in pools.values()]
+        common   = sym_sets[0].intersection(*sym_sets[1:])
+        if not common:
+            return []
+
+        cond_labels = list(pools.keys())
+        combined: list[dict] = []
+        for sym in sorted(common):
+            entry: dict = {
+                "symbol":       sym,
+                "_type":        "multi_hop",
+                "_conditions":  cond_labels,
+                "broadcast_dt": "",
+            }
+            for cond, rs in pools.items():
+                for r in rs:
+                    if r["symbol"] == sym:
+                        entry[f"_data_{cond}"] = r
+                        if not entry.get("company"):
+                            entry["company"] = r.get("company", "")
+                        if r.get("broadcast_dt", "") > entry["broadcast_dt"]:
+                            entry["broadcast_dt"] = r["broadcast_dt"]
+                        break
+            combined.append(entry)
+
+        return combined[:n]
+
+    # ── Reflection helper ────────────────────────────────────────────────────
+
+    def _reflect_params(
+        self,
+        message:  str,
+        intent:   str,
+        sector:   str | None,
+        from_dt,
+        to_dt,
+        min_cr:   float | None,
+    ) -> dict | None:
+        """
+        When a temporal SQL query returns 0 rows, ask Ollama to suggest corrected
+        parameters (wider date range, fixed sector name, lower threshold).
+        Returns a dict with corrected params + reason, or None on failure.
+        Capped at 10 s to keep the UI responsive.
+        """
+        import json as _json
+        available_sectors = list(_SECTOR_KW.keys())
+        prompt = (
+            f'A BSE/NSE database query returned 0 results. Suggest corrected parameters.\n\n'
+            f'User query: "{message}"\n'
+            f'Detected intent: {intent}\n'
+            f'Current params:\n'
+            f'  sector   : {sector or "None"}\n'
+            f'  from_dt  : {from_dt or "None"}\n'
+            f'  to_dt    : {to_dt or "None"}\n'
+            f'  min_cr   : {min_cr or "None"}\n\n'
+            f'Available sectors: {", ".join(available_sectors)}\n'
+            f'Today: {date.today().isoformat()}\n\n'
+            f'Common fixes:\n'
+            f'1. Sector mismatch — e.g. "defence" → "aerospace & defence", "banking" → "bank"\n'
+            f'2. Date range too narrow — try widening by 30 days\n'
+            f'3. min_cr threshold too high — halve it or set to null\n\n'
+            f'Reply ONLY with a JSON object:\n'
+            f'{{"sector":"corrected_or_null","from_dt":"YYYY-MM-DD_or_null",'
+            f'"to_dt":"YYYY-MM-DD_or_null","min_cr":number_or_null,"reason":"brief explanation"}}'
+        )
+        try:
+            import ollama as _ollama
+            resp = _ollama.chat(
+                model=_OLLAMA_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                stream=False,
+                options={"temperature": 0, "num_predict": 150},
+            )
+            content = resp.message.content.strip()
+            m = re.search(r'\{.*\}', content, re.DOTALL)
+            if not m:
+                return None
+            data = _json.loads(m.group())
+            # Normalise nulls expressed as strings
+            for k in ("sector", "from_dt", "to_dt"):
+                if str(data.get(k, "")).lower() in ("null", "none", ""):
+                    data[k] = None
+            if str(data.get("min_cr", "")).lower() in ("null", "none", ""):
+                data["min_cr"] = None
+            return data
+        except Exception:
+            return None
+
     # ── Retrieval (Stage 1) ───────────────────────────────────────────────────
 
     @_traceable(
@@ -957,110 +1305,32 @@ class ChatHandler:
             "n": inp.get("n", 8),
         },
     )
-    def retrieve(self, message: str, n: int = 8) -> tuple[list[dict], str, float | None]:
+    def retrieve(self, message: str, n: int = 8, reflect: bool = True) -> tuple[list[dict], str, float | None]:
         """
-        Run keyword intent detection → ChromaDB search (or SQL for temporal queries).
-        Returns (results, intent_string, min_cr). Fast, no LLM.
+        Run the retrieval StateGraph: classify → SQL / reflect / vector → rerank.
+        Returns (results, intent_string, min_cr). Fast when no reflection needed (~50 ms).
         """
-        intent      = _detect_intent(message)
-        min_cr      = _extract_min_cr(message)
-        sector      = _extract_sector(message)
-        subject     = _extract_subject(message)
-        period_type = _extract_period_type(message)
-        company_sym = self._extract_company_symbol(message)
-        from_dt, to_dt = _extract_date_range(message)
-
-        # QueryClassifier: refine "all" → "financials" when financial signals are present
-        parsed = self._classifier.classify(message)
-        if intent == "all" and parsed.intent == QueryIntent.FINANCIAL:
-            intent = "financials"
-
-        # Temporal queries → SQL direct (returns ALL companies for that date)
-        if from_dt is not None:
-            _tmp: list[dict] = []
-            # "announcements" intent (management/acquisition/dividend/etc.) → skip financials
-            if intent == "announcements":
-                _tmp = self._sql_announcements_by_date(from_dt, to_dt or from_dt, subject=subject)
-                return _tmp, "announcements", min_cr
-            if intent in ("financials", "all"):
-                # Single-day queries → allow more results; multi-day → cap at 30 for LLM context
-                _fin_n = 50 if from_dt == (to_dt or from_dt) else 30
-                _tmp = self._sql_financials_by_date(
-                    from_dt, to_dt or from_dt, n=_fin_n,
-                    period_type=period_type, symbol=company_sym,
-                    sector=sector if not company_sym else None,
-                )
-                if _tmp:
-                    return _tmp, "financials", min_cr
-            if intent == "order_win" or (intent == "all" and not _tmp):
-                _tmp = self._sql_order_wins_by_date(
-                    from_dt, to_dt or from_dt, n=50, min_cr=min_cr,
-                    sector=sector if not company_sym else None,
-                )
-                if _tmp:
-                    return _tmp, "order_win", min_cr
-            if intent == "all":
-                _tmp = self._sql_announcements_by_date(from_dt, to_dt or from_dt)
-                return _tmp, "announcements", min_cr
-            # no results → fall through to vector search
-            from_dt = to_dt = None
-
-        if intent == "order_win":
-            order_n = 50 if (from_dt or to_dt) else n
-            results = []
-            # Company-specific query → SQL by symbol is reliable and fast
-            if company_sym:
-                results = self._sql_order_wins_by_symbol(company_sym, n=n)
-            if not results:
-                # Sector filter uses $eq which fails for multi-valued stored sectors
-                # (e.g. "railways, real_estate" ≠ "railways") and misses companies
-                # whose order_sector is "general". Let BM25/semantic handle sector
-                # matching naturally from the query text instead.
-                results = self._store.search_order_wins(
-                    message, min_cr=min_cr,
-                    from_date=from_dt.isoformat() if from_dt else None,
-                    to_date=to_dt.isoformat() if to_dt else None,
-                    n=order_n,
-                )
-        elif intent == "financials":
-            # Company-specific → SQL by symbol; sector-specific → SQL by sector JOIN;
-            # generic → vector search.
-            results = []
-            if company_sym:
-                results = self._sql_financials_by_symbol(company_sym, n=n)
-            elif sector and sector not in ("railways", "roads", "water"):
-                # CSV-mapped sector: use stock_sectors JOIN for precise filtering
-                results = self._sql_financials_by_sector(sector, n=30)
-            if not results:
-                results = self._store.search_financials(message, n=n)
-        elif intent == "announcements":
-            results = self._store.search_announcements(
-                message, subject=subject,
-                from_date=from_dt.isoformat() if from_dt else None,
-                to_date=to_dt.isoformat() if to_dt else None,
-                n=n,
-            )
-        else:
-            if company_sym:
-                # Company-specific "all" query → SQL only, no BM25 (avoids prefix
-                # false-positives like ASTRAZEN showing up in ASTRAMICRO queries).
-                ann = self._sql_announcements_by_symbol(company_sym, n=n)
-                fin = self._sql_financials_by_symbol(company_sym, n=max(3, n // 2))
-                ow  = self._sql_order_wins_by_symbol(company_sym, n=max(3, n // 2))
-                combined = ann + fin + ow
-                results = sorted(combined, key=lambda r: r.get("broadcast_dt", ""), reverse=True)[:n]
-            else:
-                fin = self._store.search_financials(message, n=n // 2 + 1)
-                ann = self._store.search_announcements(message, subject=subject, n=n // 2 + 1)
-                results = sorted(fin + ann, key=lambda r: r.get("_distance", 1.0))[:n]
-
-        # Cross-encoder reranking — only for VectorStore results, not temporal SQL
-        if results:
-            candidates = _docs_to_candidates(results)
-            ranked, _  = self._reranker.rerank(candidates, message, top_n=n)
-            results    = _candidates_to_dicts(ranked)
-
-        return results, intent, min_cr
+        initial: RetrievalState = {
+            "message":          message,
+            "n":                n,
+            "do_reflect":       reflect,
+            # Placeholder values — node_classify_params overwrites all of these
+            "intent":           "all",
+            "min_cr":           None,
+            "sector":           None,
+            "subject":          None,
+            "period_type":      None,
+            "company_sym":      None,
+            "from_dt":          None,
+            "to_dt":            None,
+            "is_multi_hop":     False,
+            "results":          [],
+            "reflection_count": 0,
+            "early_return":     False,
+            "needs_rerank":     False,
+        }
+        final = self._graph.invoke(initial)
+        return final["results"], final["intent"], final["min_cr"]
 
     # ── Generation (Stage 2) ─────────────────────────────────────────────────
 
@@ -1099,6 +1369,12 @@ class ChatHandler:
         context  = _build_context(results, intent, min_cr=min_cr)
         messages = self._build_messages(message, context, history)
 
+        _RESPONSE_CHAR_LIMIT = 6_000  # hard cap — anything beyond is LLM padding
+        _TRUNCATION_RE = re.compile(
+            r'[a-zA-Z0-9₹,\.]\s*$'   # ends mid-word / mid-number with no sentence terminator
+        )
+        _SENTENCE_END_RE = re.compile(r'[.!?)\]"\']\s*$')
+
         full_response = ""
         try:
             import ollama
@@ -1116,11 +1392,21 @@ class ChatHandler:
                 if token:
                     full_response += token
                     yield token
+                    # Hard output cap — stop streaming if response grows too long
+                    if len(full_response) > _RESPONSE_CHAR_LIMIT:
+                        yield "\n\n*(response truncated — ask a more specific question)*"
+                        return
         except Exception as e:
             yield f"\n\n⚠️ Ollama error: {e}\n"
             yield "\nFalling back to direct results:\n\n"
             yield context
             return   # skip grounding check on error path
+
+        # Output guardrail: detect truncated response (ends mid-sentence)
+        stripped = full_response.rstrip()
+        if stripped and not _SENTENCE_END_RE.search(stripped) and len(stripped) > 100:
+            if _TRUNCATION_RE.search(stripped):
+                yield "\n\n⚠️ *Response may be incomplete — the model stopped mid-sentence.*"
 
         # Loop 2: citation grounding — warn if LLM cited values/symbols
         # that are absent from the retrieved source context.

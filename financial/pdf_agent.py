@@ -90,9 +90,13 @@ class PDFAgent:
     routes to the correct extractor, and persists the result.
     """
 
-    _WORKERS = 16    # parallel download+extract workers
+    _WORKERS = 32    # parallel download+extract workers (I/O-bound, safe to double)
     # Types where fast-extract almost always succeeds; skip Ollama if fast fails
     _OLLAMA_SKIP = {"press_release", "concall"}
+    # Types to skip entirely — don't even download, no financial data in them
+    _DOWNLOAD_SKIP = {"press_release", "concall"}
+    # summary_only: download + summarize, never run financial JSON schema
+    _SUMMARY_TYPES = {"summary_only"}
     # Parallel Ollama workers — 2 is safe on a single-GPU machine (one runs,
     # one waits in Ollama's queue; overlap hides I/O latency without OOM risk)
     _OLLAMA_WORKERS = 2
@@ -103,6 +107,7 @@ class PDFAgent:
         chroma_path: Path | str,
     ) -> None:
         self._db_path       = Path(db_path)
+        self._chroma_path   = Path(chroma_path)
         self._downloader    = PDFDownloader()
         self._extractor     = LocalExtractor()
         self._fin_storage   = FinancialStorage(db_path, chroma_path)
@@ -139,17 +144,19 @@ class PDFAgent:
         )
         summary = RunSummary(total_candidates=len(candidates))
 
-        # ── Filter: skip non-PDF and already-stored rows ──────────────────────
+        # ── Filter: skip non-PDF, already-stored, and no-value types ────────────
+        skipped_type = 0
         to_process = []
         for row in candidates:
             url  = row["attachment"] or ""
             sym  = row["symbol"]
             subj = row["subject"]
             extract_type = self._pdf_subjects.get(subj, "order_win")
-            tag  = f"{sym} ({extract_type})"
 
             if not self._downloader.is_pdf_url(url):
                 summary.not_pdf += 1
+            elif extract_type in self._DOWNLOAD_SKIP:
+                skipped_type += 1   # no financial data — skip download entirely
             elif not reextract and self._already_stored(sym, url):
                 summary.skipped_done += 1
             else:
@@ -157,6 +164,8 @@ class PDFAgent:
 
         if summary.skipped_done:
             print(f"  Skipped (done): {summary.skipped_done}")
+        if skipped_type:
+            print(f"  Skipped (no financial data): {skipped_type}")
         if summary.not_pdf:
             print(f"  Skipped (not PDF): {summary.not_pdf}")
 
@@ -257,6 +266,7 @@ class PDFAgent:
                     broadcast_dt    = row["broadcast_dt"] or "",
                     source_url      = row["attachment"] or "",
                     extraction_type = extract_type,
+                    pdf_bytes       = pdf_bytes,
                 )
                 return row, result, pdf_bytes
 
@@ -303,6 +313,9 @@ class PDFAgent:
 
         self._fin_storage.close()
         self._stmt_storage.close()
+        # Reopen storage so this agent instance can be called again (run() reopens fresh)
+        self._fin_storage  = FinancialStorage(self._db_path, self._chroma_path)
+        self._stmt_storage = StatementStorage(self._db_path)
         summary.print()
         return summary
 

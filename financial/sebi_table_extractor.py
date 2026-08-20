@@ -34,6 +34,13 @@ _ROW_KEYS: dict[str, list[str]] = {
     "related_party": ["related party"],
 }
 
+# SEBI form template text that appears in Description column when companies don't fill in the client.
+# Some PDFs copy the Particulars row label verbatim into the Description — strip this prefix.
+_SEBI_TEMPLATE_CLIENT = re.compile(
+    r"^['\"]?order\s*\(s\)\s*/\s*contract\s*\(s\)\s*['\"]?\s*[;,]?\s*",
+    re.IGNORECASE,
+)
+
 # ── Amount parsing ────────────────────────────────────────────────────────────
 
 # Matches: Rs. 500 Crore / ₹76,20,00,000 / INR 500 Cr / Rs.847.50 Crores
@@ -129,8 +136,8 @@ def _match_row(row: list[str | None], keywords: list[str]) -> bool:
 
 
 def _value_cell(row: list[str | None]) -> str:
-    """Return the last non-empty cell (Description column)."""
-    for cell in reversed(row):
+    """Return the Description column value (index 2+), never the Particulars text (index 1)."""
+    for cell in reversed(row[2:] if len(row) > 2 else []):
         if cell and str(cell).strip():
             return str(cell).strip()
     return ""
@@ -172,20 +179,71 @@ def extract_from_annexure_table(
     except Exception:
         return None
 
-    if not annexure_table:
-        return None
-
     # ── Extract each field by row label ──────────────────────────────────────
+    # Works whether annexure_table was found or not — text fallback covers both paths
     fields: dict[str, str] = {}
-    for row in annexure_table:
-        for field_name, keywords in _ROW_KEYS.items():
-            if field_name not in fields and _match_row(row, keywords):
-                fields[field_name] = _value_cell(row)
+
+    if annexure_table:
+        for row in annexure_table:
+            for field_name, keywords in _ROW_KEYS.items():
+                if field_name not in fields and _match_row(row, keywords):
+                    fields[field_name] = _value_cell(row)
+
+    # ── Text-based value fallback (covers non-standard table layouts) ─────────
+    # Re-extract full PDF text and search for "broad consideration" keyword when
+    # table parsing missed the value row (e.g. CEIGALL letter-header tables).
+    _full_text: str | None = None
+
+    def _get_text() -> str:
+        nonlocal _full_text
+        if _full_text is None:
+            try:
+                with pdfplumber.open(io.BytesIO(pdf_bytes)) as _pdf:
+                    _full_text = "\n".join(
+                        p.extract_text() or "" for p in _pdf.pages
+                    )
+            except Exception:
+                _full_text = ""
+        return _full_text
+
+    # If table parse missed the value, try plain-text regex
+    if not fields.get("value"):
+        _txt = _get_text()
+        _value_kws = ["broad consideration", "consideration or size", "value of the order",
+                      "value of the contract", "broad commercial consideration"]
+        for _kw in _value_kws:
+            _pos = _txt.lower().find(_kw)
+            if _pos >= 0:
+                _ctx = _txt[_pos: _pos + 300]
+                fields["value"] = _ctx
+                break
+
+    # Similarly fill client/duration from text if table missed them
+    if not fields.get("client") and annexure_table is None:
+        _txt = _get_text()
+        _m = re.search(r'(?:name of the entity|entity awarding)[^\n]*\n([^\n]+)', _txt, re.IGNORECASE)
+        if _m:
+            fields["client"] = _m.group(1).strip()
+        _dm = re.search(r'(\d+)\s*months?', _txt, re.IGNORECASE)
+        if _dm and not fields.get("duration"):
+            fields["duration"] = _dm.group(0)
+
+    if not fields and annexure_table is None:
+        return None
 
     value_cr = _parse_value_cell(fields.get("value", ""))
     duration = _duration_from_cell(fields.get("duration", ""))
-    client   = fields.get("client", "not disclosed").strip()
-    desc     = fields.get("description", "").strip()
+    # Normalize client name — collapse whitespace, strip newlines, cap at 80 chars
+    client_raw = fields.get("client", "not disclosed")
+    client = " ".join(client_raw.split())[:80] if client_raw else "not disclosed"
+    # Strip SEBI template prefix "order(s)/contract(s);" that some companies copy-paste
+    # verbatim into the Description column instead of filling in the actual client name.
+    client = _SEBI_TEMPLATE_CLIENT.sub("", client).strip()
+    # Also unwrap leading parenthesized acronym: "('RSLDC') acting as..." → "RSLDC acting as..."
+    client = re.sub(r"^\(['\"]?(\w+)['\"]?\)\s+", r"\1 ", client).strip()
+    if not client:
+        client = "not disclosed"
+    desc   = " ".join(fields.get("description", "").split())[:200]
 
     return {
         "client":       client,

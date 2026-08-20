@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS financial_results (
     client_name         TEXT,
     client_type         TEXT,
     order_sector        TEXT,
-    execution_months    INTEGER
+    execution_months    INTEGER,
+    confidence          TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_sym_period
     ON financial_results(symbol, period);
@@ -94,6 +95,7 @@ _MIGRATIONS = [
     "ALTER TABLE financial_results ADD COLUMN client_type      TEXT",
     "ALTER TABLE financial_results ADD COLUMN order_sector     TEXT",
     "ALTER TABLE financial_results ADD COLUMN execution_months INTEGER",
+    "ALTER TABLE financial_results ADD COLUMN confidence       TEXT",
 ]
 
 
@@ -161,7 +163,7 @@ class FinancialStorage:
             VALUES (?,?,?,?,  ?,?,?,?,  ?,?,?,?)
         """, (
             r.symbol, r.company, r.broadcast_dt,
-            r.pat_cr or None,  # order_value_cr stored via pat_cr in legacy path
+            r.order_value_cr,
             r.client_name, r.client_type, r.order_sector, r.execution_months,
             description, r.raw_summary, r.source_url, from_genuine,
         ))
@@ -199,8 +201,9 @@ class FinancialStorage:
              eps, dividend_per_share,
              key_highlights, guidance, raw_summary,
              source_url, broadcast_dt,
-             sector, client_name, client_type, order_sector, execution_months)
-        VALUES (?,?,?,?,?,  ?,?,  ?,?,  ?,?,  ?,?,  ?,?,?,  ?,?,  ?,?,?,?,?)
+             sector, client_name, client_type, order_sector, execution_months,
+             confidence)
+        VALUES (?,?,?,?,?,  ?,?,  ?,?,  ?,?,  ?,?,  ?,?,?,  ?,?,  ?,?,?,?,?,  ?)
         """
         cur = self._conn.execute(sql, (
             r.symbol, r.company, r.period, r.period_label, r.period_type,
@@ -211,6 +214,7 @@ class FinancialStorage:
             r.highlights_json(), r.guidance, r.raw_summary,
             r.source_url, r.broadcast_dt,
             r.sector, r.client_name, r.client_type, r.order_sector, r.execution_months,
+            r.confidence,
         ))
         self._conn.commit()
         return cur.rowcount > 0
@@ -232,6 +236,7 @@ class FinancialStorage:
                         eps=?, dividend_per_share=?,
                         key_highlights=?, guidance=?, raw_summary=?,
                         sector=?, client_name=?, client_type=?, order_sector=?, execution_months=?,
+                        confidence=?,
                         extracted_at=CURRENT_TIMESTAMP
                     WHERE source_url=?
                 """, (
@@ -242,6 +247,7 @@ class FinancialStorage:
                     r.eps, r.dividend_per_share,
                     r.highlights_json(), r.guidance, r.raw_summary,
                     r.sector, r.client_name, r.client_type, r.order_sector, r.execution_months,
+                    r.confidence,
                     r.source_url,
                 ))
                 self._conn.commit()
@@ -285,7 +291,7 @@ class FinancialStorage:
                     extracted_at=CURRENT_TIMESTAMP
                 WHERE source_url=?
             """, (
-                r.pat_cr or None, r.client_name, r.client_type,
+                r.order_value_cr, r.client_name, r.client_type,
                 r.order_sector, r.execution_months, description,
                 r.raw_summary, from_genuine, r.source_url,
             ))

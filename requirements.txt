@@ -1,3 +1,36 @@
-anthropic>=0.49.0
-chromadb>=0.5.0
+# ── Web server ────────────────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# ── Core deps ─────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+httpx>=0.27.0
+requests>=2.31.0
+
+# ── LLM providers ─────────────────────────────────────────────────────────────
+groq>=0.13.0
+anthropic>=0.49.0
+
+# ── LangChain / LangGraph ─────────────────────────────────────────────────────
+langchain>=1.0.0
+langchain-core>=1.0.0
+langchain-community>=0.3.0
+langgraph>=1.2.0
+langsmith>=0.1.0
+
+# ── Vector store ──────────────────────────────────────────────────────────────
+chromadb>=0.5.0
+
+# ── PDF extraction ────────────────────────────────────────────────────────────
+pdfplumber>=0.11.0
+PyMuPDF>=1.24.0
+
+# ── Vision fallback (Gemini Flash) ───────────────────────────────────────────
+google-genai>=1.0.0
+
+# ── Reranker (optional — falls back to heuristic proxy if missing) ───────────
+# Uncomment to enable CrossEncoder (adds ~2 GB torch download):
+# sentence-transformers>=3.0.0

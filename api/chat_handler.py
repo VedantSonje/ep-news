@@ -37,8 +37,9 @@ if _os.getenv("LANGSMITH_API_KEY"):
 
 
 from api.retrieval_graph import build_retrieval_graph, RetrievalState
+from api.llm_client import llm_complete, llm_stream, ACTIVE_PROVIDER, ACTIVE_MODEL
 
-_OLLAMA_MODEL = "llama3.1:latest"
+_OLLAMA_MODEL = ACTIVE_MODEL   # kept for LangSmith metadata compat
 
 _SYSTEM_PROMPT = """You are an equity research analyst at an Indian stockbroker.
 Answer questions about BSE/NSE corporate announcements using ONLY the data provided in the context below.
@@ -1273,14 +1274,11 @@ class ChatHandler:
             f'"to_dt":"YYYY-MM-DD_or_null","min_cr":number_or_null,"reason":"brief explanation"}}'
         )
         try:
-            import ollama as _ollama
-            resp = _ollama.chat(
-                model=_OLLAMA_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                stream=False,
-                options={"temperature": 0, "num_predict": 150},
-            )
-            content = resp.message.content.strip()
+            content = llm_complete(
+                [{"role": "user", "content": prompt}],
+                temperature=0,
+                max_tokens=150,
+            ).strip()
             m = re.search(r'\{.*\}', content, re.DOTALL)
             if not m:
                 return None
@@ -1377,27 +1375,14 @@ class ChatHandler:
 
         full_response = ""
         try:
-            import ollama
-            stream = ollama.chat(
-                model=_OLLAMA_MODEL,
-                messages=messages,
-                stream=True,
-                options={"temperature": 0, "num_predict": -1},
-            )
-            for chunk in stream:
-                try:
-                    token = chunk.message.content
-                except AttributeError:
-                    token = chunk["message"]["content"]
-                if token:
-                    full_response += token
-                    yield token
-                    # Hard output cap — stop streaming if response grows too long
-                    if len(full_response) > _RESPONSE_CHAR_LIMIT:
-                        yield "\n\n*(response truncated — ask a more specific question)*"
-                        return
+            for token in llm_stream(messages, temperature=0):
+                full_response += token
+                yield token
+                if len(full_response) > _RESPONSE_CHAR_LIMIT:
+                    yield "\n\n*(response truncated — ask a more specific question)*"
+                    return
         except Exception as e:
-            yield f"\n\n⚠️ Ollama error: {e}\n"
+            yield f"\n\n⚠️ LLM error ({ACTIVE_PROVIDER}): {e}\n"
             yield "\nFalling back to direct results:\n\n"
             yield context
             return   # skip grounding check on error path

@@ -1022,26 +1022,22 @@ class LocalExtractor:
     # ── Ollama JSON call ──────────────────────────────────────────────────────
 
     def _ollama_json(self, prompt: str) -> dict | None:
-        """Call Ollama with JSON mode and return the parsed dict, or None on error."""
+        """Call LLM with JSON mode and return the parsed dict, or None on error."""
         try:
-            import ollama
-            response = ollama.chat(
-                model=_OLLAMA_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                format="json",
-                options={"temperature": 0, "num_gpu": 99},
-            )
-            try:
-                raw = response.message.content
-            except AttributeError:
-                raw = response["message"]["content"]
-            print(f"    [ollama] response {len(raw)} chars", flush=True)
+            from api.llm_client import llm_json, ACTIVE_PROVIDER
+            raw = llm_json([{"role": "user", "content": prompt}], temperature=0, max_tokens=1024)
+            print(f"    [{ACTIVE_PROVIDER}] response {len(raw)} chars", flush=True)
+            # Strip markdown fences Groq occasionally wraps around JSON
+            raw = raw.strip()
+            if raw.startswith("```"):
+                import re as _re
+                raw = _re.sub(r"```(?:json)?\s*", "", raw, flags=_re.IGNORECASE).strip()
             return json.loads(raw)
         except json.JSONDecodeError as e:
-            print(f"    [ollama] JSON parse error: {e}", flush=True)
+            print(f"    [llm] JSON parse error: {e}", flush=True)
             return None
         except Exception as e:
-            print(f"    [ollama] ERROR: {e}", flush=True)
+            print(f"    [llm] ERROR: {e}", flush=True)
             return None
 
     # ── Ollama calls with Pydantic validation ────────────────────────────────

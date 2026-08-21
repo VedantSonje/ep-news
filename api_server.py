@@ -212,6 +212,13 @@ async def lifespan(_app):
 # ── App setup ─────────────────────────────────────────────────────────────────
 
 app         = FastAPI(title="EP News AI", version="2.0", lifespan=lifespan)
+
+# Ensure the SQLite schema (announcements table, etc.) exists before ChatHandler
+# queries it — on a fresh deployment the DB file may not have any tables yet.
+from storage.sql_storage import SQLiteStorage
+_storage = SQLiteStorage(cfg.db_path)
+_storage.close()
+
 handler     = ChatHandler(chroma_path=cfg.chroma_path, db_path=cfg.db_path)
 
 from api.tool_agent import ToolAgent

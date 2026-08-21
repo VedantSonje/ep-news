@@ -196,6 +196,15 @@ async def _scheduler() -> None:
 
 @asynccontextmanager
 async def lifespan(_app):
+    # On Railway cold start: download data from R2 if data/ is absent
+    try:
+        from storage.r2_sync import download_if_needed
+        await asyncio.get_event_loop().run_in_executor(
+            None, download_if_needed, _HERE / "data"
+        )
+    except Exception as _e:
+        _log.warning("R2 download skipped: %s", _e)
+
     # Ensure daily_briefs table exists before scheduler starts
     from api.brief_agent import ensure_table as _ensure_brief_table
     await asyncio.get_event_loop().run_in_executor(None, _ensure_brief_table, cfg.db_path)

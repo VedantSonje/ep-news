@@ -53,6 +53,8 @@ def main() -> None:
                         help="Skip Chartink breakout fetch (step 3)")
     parser.add_argument("--skip-brief", action="store_true",
                         help="Skip brief generation (step 4)")
+    parser.add_argument("--skip-sync", action="store_true",
+                        help="Skip R2 upload (step 5)")
     args = parser.parse_args()
 
     target = args.date
@@ -97,6 +99,24 @@ def main() -> None:
             print(f"[daily] Brief generation error: {e}", flush=True)
     else:
         print("[daily] Skipping brief generation (--skip-brief)", flush=True)
+
+    # Step 5 — sync data to Cloudflare R2 so Railway picks it up
+    if not args.skip_sync:
+        print(f"\n{'='*60}", flush=True)
+        print("[daily] STEP: Sync data to R2", flush=True)
+        print(f"{'='*60}", flush=True)
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+            from storage.r2_sync import upload, is_configured
+            if is_configured():
+                upload(BASE / "data")
+            else:
+                print("[daily] R2 not configured — set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY in .env to enable sync", flush=True)
+        except Exception as e:
+            print(f"[daily] R2 sync error: {e}", flush=True)
+    else:
+        print("[daily] Skipping R2 sync (--skip-sync)", flush=True)
 
     elapsed = time.time() - t_start
     print(f"\n[daily] Done. Total time: {elapsed:.1f}s", flush=True)

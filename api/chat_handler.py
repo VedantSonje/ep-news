@@ -675,10 +675,16 @@ class ChatHandler:
         self._reranker   = Reranker()   # warms up CrossEncoder on startup
         # Cache known symbols + company-name → symbol index for query expansion
         _conn = sqlite3.connect(str(self._db_path))
-        self._known_symbols: set[str] = {
-            r[0] for r in _conn.execute("SELECT DISTINCT symbol FROM announcements").fetchall()
-        }
-        self._name_to_symbol: dict[str, str] = _build_name_to_symbol(_conn)
+        try:
+            self._known_symbols: set[str] = {
+                r[0] for r in _conn.execute("SELECT DISTINCT symbol FROM announcements").fetchall()
+            }
+        except sqlite3.OperationalError:
+            self._known_symbols = set()
+        try:
+            self._name_to_symbol: dict[str, str] = _build_name_to_symbol(_conn)
+        except sqlite3.OperationalError:
+            self._name_to_symbol = {}
         _conn.close()
         self._graph = build_retrieval_graph(self)
 

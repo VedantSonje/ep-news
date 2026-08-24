@@ -215,15 +215,7 @@ async def lifespan(_app):
         _log.error("[startup] ChatHandler FAILED:\n%s", _tb.format_exc())
         raise
 
-    if _WEB_SEARCH:
-        try:
-            _log.info("[startup] Initializing ToolAgent …")
-            from api.tool_agent import ToolAgent as _ToolAgent
-            tool_agent = _ToolAgent(db_path=cfg.db_path, chroma_path=cfg.chroma_path)
-            _log.info("[startup] ToolAgent OK")
-        except Exception:
-            _log.error("[startup] ToolAgent FAILED:\n%s", _tb.format_exc())
-            raise
+    # ToolAgent loaded lazily on first /api/chat/agent request (avoids double ChromaDB load)
 
     try:
         from api.brief_agent import ensure_table as _ensure_brief_table
@@ -653,6 +645,11 @@ async def agent_chat(req: ChatRequest):
             yield f"data: {json.dumps({'type':'token','text':err})}\n\n"
             yield f"data: {json.dumps({'type':'done'})}\n\n"
         return StreamingResponse(_bad_agent(), media_type="text/event-stream")
+
+    global tool_agent
+    if tool_agent is None:
+        from api.tool_agent import ToolAgent as _ToolAgent
+        tool_agent = _ToolAgent(db_path=cfg.db_path, chroma_path=cfg.chroma_path)
 
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
     queue: asyncio.Queue[dict | None] = asyncio.Queue()

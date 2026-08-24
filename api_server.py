@@ -215,14 +215,15 @@ async def lifespan(_app):
         _log.error("[startup] ChatHandler FAILED:\n%s", _tb.format_exc())
         raise
 
-    try:
-        _log.info("[startup] Initializing ToolAgent …")
-        from api.tool_agent import ToolAgent as _ToolAgent
-        tool_agent = _ToolAgent(db_path=cfg.db_path, chroma_path=cfg.chroma_path)
-        _log.info("[startup] ToolAgent OK")
-    except Exception:
-        _log.error("[startup] ToolAgent FAILED:\n%s", _tb.format_exc())
-        raise
+    if _WEB_SEARCH:
+        try:
+            _log.info("[startup] Initializing ToolAgent …")
+            from api.tool_agent import ToolAgent as _ToolAgent
+            tool_agent = _ToolAgent(db_path=cfg.db_path, chroma_path=cfg.chroma_path)
+            _log.info("[startup] ToolAgent OK")
+        except Exception:
+            _log.error("[startup] ToolAgent FAILED:\n%s", _tb.format_exc())
+            raise
 
     try:
         from api.brief_agent import ensure_table as _ensure_brief_table

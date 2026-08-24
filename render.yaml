@@ -35,4 +35,4 @@ services:
       - key: R2_SECRET_ACCESS_KEY
         sync: false
       - key: R2_BUCKET
-        value: ep-news-data
+        value: stocktprotein

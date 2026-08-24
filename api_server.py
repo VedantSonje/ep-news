@@ -196,6 +196,7 @@ async def _scheduler() -> None:
 
 @asynccontextmanager
 async def lifespan(_app):
+    import traceback as _tb
     global handler, tool_agent
 
     # R2 download before ChatHandler (which opens the DB)
@@ -205,14 +206,31 @@ async def lifespan(_app):
     except Exception as _e:
         _log.warning("R2 download skipped: %s", _e)
 
-    # Heavy init after port is already bound
-    handler    = ChatHandler(chroma_path=cfg.chroma_path, db_path=cfg.db_path)
-    from api.tool_agent import ToolAgent as _ToolAgent
-    tool_agent = _ToolAgent(db_path=cfg.db_path, chroma_path=cfg.chroma_path)
+    # Heavy init — each step wrapped so errors are visible in logs
+    try:
+        _log.info("[startup] Initializing ChatHandler …")
+        handler = ChatHandler(chroma_path=cfg.chroma_path, db_path=cfg.db_path)
+        _log.info("[startup] ChatHandler OK")
+    except Exception:
+        _log.error("[startup] ChatHandler FAILED:\n%s", _tb.format_exc())
+        raise
 
-    from api.brief_agent import ensure_table as _ensure_brief_table
-    await asyncio.get_event_loop().run_in_executor(None, _ensure_brief_table, cfg.db_path)
+    try:
+        _log.info("[startup] Initializing ToolAgent …")
+        from api.tool_agent import ToolAgent as _ToolAgent
+        tool_agent = _ToolAgent(db_path=cfg.db_path, chroma_path=cfg.chroma_path)
+        _log.info("[startup] ToolAgent OK")
+    except Exception:
+        _log.error("[startup] ToolAgent FAILED:\n%s", _tb.format_exc())
+        raise
 
+    try:
+        from api.brief_agent import ensure_table as _ensure_brief_table
+        await asyncio.get_event_loop().run_in_executor(None, _ensure_brief_table, cfg.db_path)
+    except Exception as _e:
+        _log.warning("[startup] brief table init failed: %s", _e)
+
+    _log.info("[startup] All components ready — starting scheduler")
     task = asyncio.create_task(_scheduler())
     yield
     task.cancel()

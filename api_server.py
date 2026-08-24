@@ -57,13 +57,6 @@ _HERE = Path(__file__).parent
 cfg   = AppConfig.from_env()
 cfg.ensure_dirs()
 
-# R2 download must happen before ChatHandler init (which opens the DB)
-try:
-    from storage.r2_sync import download_if_needed as _r2_download
-    _r2_download(_HERE / "data")
-except Exception as _e:
-    _log.warning("R2 download skipped: %s", _e)
-
 
 # ── Auto-update helpers ───────────────────────────────────────────────────────
 
@@ -203,7 +196,20 @@ async def _scheduler() -> None:
 
 @asynccontextmanager
 async def lifespan(_app):
-    # Ensure daily_briefs table exists before scheduler starts
+    global handler, tool_agent
+
+    # R2 download before ChatHandler (which opens the DB)
+    try:
+        from storage.r2_sync import download_if_needed as _r2_download
+        await asyncio.get_event_loop().run_in_executor(None, _r2_download, _HERE / "data")
+    except Exception as _e:
+        _log.warning("R2 download skipped: %s", _e)
+
+    # Heavy init after port is already bound
+    handler    = ChatHandler(chroma_path=cfg.chroma_path, db_path=cfg.db_path)
+    from api.tool_agent import ToolAgent as _ToolAgent
+    tool_agent = _ToolAgent(db_path=cfg.db_path, chroma_path=cfg.chroma_path)
+
     from api.brief_agent import ensure_table as _ensure_brief_table
     await asyncio.get_event_loop().run_in_executor(None, _ensure_brief_table, cfg.db_path)
 
@@ -218,16 +224,26 @@ async def lifespan(_app):
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 
-app         = FastAPI(title="EP News AI", version="2.0", lifespan=lifespan)
-handler     = ChatHandler(chroma_path=cfg.chroma_path, db_path=cfg.db_path)
+handler:    "ChatHandler | None" = None
+tool_agent: "ToolAgent | None"   = None
 
-from api.tool_agent import ToolAgent
-tool_agent  = ToolAgent(db_path=cfg.db_path, chroma_path=cfg.chroma_path)
+app = FastAPI(title="EP News AI", version="2.0", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+def _require_ready():
+    if handler is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Service warming up — retry in a moment")
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+@app.get("/ping", include_in_schema=False)
+async def ping():
+    return {"status": "ok"}
+
 
 @app.get("/", include_in_schema=False)
 async def index():
@@ -236,11 +252,13 @@ async def index():
 
 @app.get("/api/stats")
 async def stats():
+    _require_ready()
     return handler.stats()
 
 
 @app.get("/api/suggestions")
 async def suggestions():
+    _require_ready()
     return {"suggestions": handler.suggestions}
 
 
@@ -512,6 +530,7 @@ async def chat(req: ChatRequest):
       {"type": "token", "text": "Found 3 ..."}
       {"type": "done"}
     """
+    _require_ready()
     if not req.message.strip():
         async def empty():
             yield f"data: {json.dumps({'type':'token','text':'Please type a question.'})}\n\n"

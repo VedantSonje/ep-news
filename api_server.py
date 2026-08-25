@@ -525,6 +525,30 @@ _INJECT_RE = __import__("re").compile(
     __import__("re").IGNORECASE,
 )
 
+_VAGUE_RE = __import__("re").compile(
+    r'^\s*(top\s*\d*\s*stocks?'
+    r'|best\s+stocks?'
+    r'|good\s+stocks?'
+    r'|hot\s+stocks?'
+    r'|which\s+stocks?\s+(to\s+)?(buy|invest)'
+    r'|show\s+(me\s+)?stocks?'
+    r'|recommend\s+(me\s+)?stocks?'
+    r'|any\s+good\s+(stock|company|pick)'
+    r')\s*[?!.]*\s*$',
+    __import__("re").IGNORECASE,
+)
+
+_VAGUE_REPLY = (
+    "To find the right stocks, please tell me what you're looking for:\n\n"
+    "📦 **Order wins** — e.g. \"Defence order wins above Rs.100 Cr this month\"\n"
+    "📈 **Financial results** — e.g. \"Companies with PAT growth above 20% this quarter\"\n"
+    "⚡ **Volume breakouts** — e.g. \"Breakout stocks in pharma sector last 14 days\"\n"
+    "🏭 **By sector** — e.g. \"Top order wins in railways or defence\"\n"
+    "📊 **EBITDA / margins** — e.g. \"Companies with EBITDA margin above 15%\"\n\n"
+    "Just type your question and I'll search our BSE/NSE database!"
+)
+
+
 def _validate_chat_input(msg: str) -> str | None:
     """Return an error string if the message fails guardrails, else None."""
     if len(msg) > _CHAT_MAX_CHARS:
@@ -555,6 +579,13 @@ async def chat(req: ChatRequest):
             yield f"data: {json.dumps({'type':'token','text':err})}\n\n"
             yield f"data: {json.dumps({'type':'done'})}\n\n"
         return StreamingResponse(_bad(), media_type="text/event-stream")
+
+    if _VAGUE_RE.match(req.message.strip()):
+        async def _vague():
+            yield f"data: {json.dumps({'type':'meta','intent':'all','count':0,'sources':[]})}\n\n"
+            yield f"data: {json.dumps({'type':'token','text':_VAGUE_REPLY})}\n\n"
+            yield f"data: {json.dumps({'type':'done'})}\n\n"
+        return StreamingResponse(_vague(), media_type="text/event-stream")
 
     def generate():
         msg = req.message.strip()

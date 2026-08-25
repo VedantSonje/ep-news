@@ -31,16 +31,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Generator
 
-from pydantic_ai import Agent
-from pydantic_ai.models.ollama import OllamaModel
-from pydantic_ai.providers.ollama import OllamaProvider
+from api.llm_client import llm_stream
 
 if TYPE_CHECKING:
     from api.chat_handler import ChatHandler
 
-_OLLAMA_BASE_URL = "http://localhost:11434/v1"
-_TEXT_MODEL      = os.getenv("OLLAMA_TEXT_MODEL", "llama3.1:latest")
-_WEB_TIMEOUT     = int(os.getenv("WEB_SEARCH_TIMEOUT", "8"))   # seconds
+_WEB_TIMEOUT = int(os.getenv("WEB_SEARCH_TIMEOUT", "8"))   # seconds
 
 
 @dataclass
@@ -49,11 +45,6 @@ class EPDeps:
     query:   str        = ""
     history: list[dict] = field(default_factory=list)
 
-
-# ── PydanticAI text agent ─────────────────────────────────────────────────────
-
-_provider   = OllamaProvider(base_url=_OLLAMA_BASE_URL)
-_text_model = OllamaModel(_TEXT_MODEL, provider=_provider)
 
 _SYSTEM_PROMPT = """You are an equity research analyst at an Indian stockbroker.
 Answer questions about BSE/NSE stocks using the data provided in the context below.
@@ -73,12 +64,6 @@ Rules:
 - CONVERSATION HISTORY is shown only to understand follow-up references (e.g. "those companies", "that stock") — it is NOT a data source. Never include results from a prior answer in the current response unless the DATABASE CONTEXT or WEB NEWS for this turn also contains them.
 - Today's date is {today}"""
 
-ep_agent: Agent[EPDeps, str] = Agent(
-    _text_model,
-    deps_type=EPDeps,
-    output_type=str,
-    system_prompt=_SYSTEM_PROMPT.format(today=date.today().strftime("%d %B %Y")),
-)
 
 
 # ── Dual-agent streaming (DB + Web in parallel) ───────────────────────────────
@@ -148,16 +133,15 @@ def stream_dual_agent(
         + f"\n\nQUESTION: {message}"
     )
 
-    deps = EPDeps(handler=handler, query=message, history=history)
-
-    # ── PydanticAI streaming ──────────────────────────────────────────────────
+    # ── Stream via llm_client (Groq on Railway, Ollama locally) ──────────────
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT.format(today=date.today().strftime("%d %B %Y"))},
+        {"role": "user",   "content": user_prompt},
+    ]
     try:
-        with ep_agent.run_stream_sync(user_prompt, deps=deps) as response:
-            for delta in response.stream_text(delta=True, debounce_by=None):
-                if delta:
-                    yield delta
+        yield from llm_stream(messages)
     except Exception as exc:
-        yield f"\n\n⚠️ Agent error: {exc}\n"
+        yield f"\n\n⚠️ LLM error: {exc}\n"
         yield "\nFalling back to direct context:\n\n"
         yield combined
 

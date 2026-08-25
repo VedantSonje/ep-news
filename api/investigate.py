@@ -13,9 +13,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Generator
 
-_OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://localhost:11434")
-_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:latest")
-
 
 # ── Step 1: DB context ────────────────────────────────────────────────────────
 
@@ -217,33 +214,12 @@ def investigate_stream(
     prompt = _build_prompt(symbol, ctx["company"], signal_date, ctx, news)
 
     try:
-        import requests
-        resp = requests.post(
-            f"{_OLLAMA_URL}/api/generate",
-            json={
-                "model":   model,
-                "prompt":  prompt,
-                "stream":  True,
-                "options": {"temperature": 0.3, "num_predict": 700},
-            },
-            stream=True,
-            timeout=120,
-        )
+        from api.llm_client import llm_stream
         yield ev({"type": "step", "step": "llm", "status": "streaming", "msg": "Analysing…"})
-
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            try:
-                chunk = json.loads(line)
-                token = chunk.get("response", "")
-                if token:
-                    yield ev({"type": "token", "text": token})
-                if chunk.get("done"):
-                    break
-            except Exception:
-                continue
-
+        messages = [{"role": "user", "content": prompt}]
+        for token in llm_stream(messages, temperature=0.3, max_tokens=700):
+            if token:
+                yield ev({"type": "token", "text": token})
     except Exception as e:
         yield ev({"type": "error", "msg": f"LLM error: {e}"})
 

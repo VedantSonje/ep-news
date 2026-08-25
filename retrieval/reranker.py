@@ -66,8 +66,9 @@ def _get_cross_encoder():
     _ce_tried = True
     try:
         import os as _os
-        # Short timeout so Railway startup never hangs waiting for HuggingFace
-        _os.environ.setdefault("HF_HUB_TIMEOUT", "8")
+        # Never download from network — only use if already cached locally.
+        # On Railway (no cache) this raises immediately; heuristic proxy is used instead.
+        _os.environ["HF_HUB_OFFLINE"] = "1"
         from sentence_transformers import CrossEncoder
         _ce_model = CrossEncoder("BAAI/bge-reranker-v2-m3", max_length=512)
         print("[reranker] CrossEncoder loaded (BAAI/bge-reranker-v2-m3)", flush=True)

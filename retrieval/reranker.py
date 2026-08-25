@@ -65,11 +65,11 @@ def _get_cross_encoder():
         return _ce_model
     _ce_tried = True
     try:
+        import os as _os
+        # Short timeout so Railway startup never hangs waiting for HuggingFace
+        _os.environ.setdefault("HF_HUB_TIMEOUT", "8")
         from sentence_transformers import CrossEncoder
-        _ce_model = CrossEncoder(
-            "BAAI/bge-reranker-v2-m3",
-            max_length=512,
-        )
+        _ce_model = CrossEncoder("BAAI/bge-reranker-v2-m3", max_length=512)
         print("[reranker] CrossEncoder loaded (BAAI/bge-reranker-v2-m3)", flush=True)
     except Exception as e:
         print(f"[reranker] CrossEncoder unavailable ({e}), using heuristic proxy", flush=True)
@@ -97,7 +97,7 @@ class Reranker:
         self._re   = recency_weight
         self._div  = diversity_weight
         self._ov   = order_value_weight
-        _get_cross_encoder()   # warm up on init
+        # Cross-encoder loaded lazily on first rerank() — don't block startup
 
     def rerank(
         self,

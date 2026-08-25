@@ -56,7 +56,8 @@ Rules:
 - Never invent numbers — use only what the context provides
 - Use Indian number format (Rs. Cr, not millions)
 - Keep answers concise — 3-10 lines for single-company queries; for list queries include ALL entries from the context
-- DATE RANGES: The context header already shows the exact date range of results (e.g. "Announced between 2026-07-01 and 2026-07-31"). Use those exact dates if you need to mention a period — do NOT compute or guess date ranges yourself"""
+- DATE RANGES: The context header already shows the exact date range of results (e.g. "Announced between 2026-07-01 and 2026-07-31"). Use those exact dates if you need to mention a period — do NOT compute or guess date ranges yourself
+- OFF-TOPIC: If the question is completely unrelated to Indian stocks, NSE/BSE, financial results, order wins, or investments, reply ONLY with: "I'm specialized for Indian equity research. Please ask me about NSE/BSE stocks, financial results, order wins, or market announcements." Do NOT answer the off-topic question."""
 
 
 # ── Intent detection ──────────────────────────────────────────────────────────

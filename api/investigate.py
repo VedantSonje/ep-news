@@ -5,7 +5,6 @@ Three sequential steps: DB context → web news → LLM synthesis (streaming).
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import urllib.parse
 import urllib.request
@@ -171,7 +170,7 @@ def investigate_stream(
     symbol: str,
     signal_date: str,
     db_path: Path,
-    model: str = _OLLAMA_MODEL,
+    model: str = "",
 ) -> Generator[str, None, None]:
     """Yields JSON-encoded SSE payload strings (without the 'data: ' prefix)."""
 

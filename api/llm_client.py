@@ -11,7 +11,7 @@ import os
 from typing import Generator
 
 _GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-_GROQ_MODEL   = os.getenv("GROQ_MODEL",   "groq/compound-mini")
+_GROQ_MODEL   = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
 _OLLAMA_MODEL = os.getenv("OLLAMA_MODEL",  "llama3.1:latest")
 
 ACTIVE_PROVIDER = "groq" if _GROQ_API_KEY else "ollama"
@@ -78,27 +78,52 @@ def llm_stream(
 # ── Groq ──────────────────────────────────────────────────────────────────────
 
 def _groq_complete(messages, temperature, max_tokens) -> str:
+    import re, time
     from groq import Groq
     client = Groq(api_key=_GROQ_API_KEY)
-    resp = client.chat.completions.create(
-        model=_GROQ_MODEL,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-    return resp.choices[0].message.content or ""
+    for attempt in range(3):
+        try:
+            resp = client.chat.completions.create(
+                model=_GROQ_MODEL,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            return resp.choices[0].message.content or ""
+        except Exception as e:
+            err = str(e)
+            if attempt < 2 and ("rate_limit" in err.lower() or "429" in err or "ratelimit" in err.lower()):
+                m = re.search(r'try again in ([\d.]+)ms', err, re.I)
+                time.sleep((float(m.group(1)) / 1000 + 0.3) if m else 2.0)
+            else:
+                raise
+    return ""
 
 
 def _groq_stream(messages, temperature, max_tokens) -> Generator[str, None, None]:
+    import re, time
     from groq import Groq
     client = Groq(api_key=_GROQ_API_KEY)
-    stream = client.chat.completions.create(
-        model=_GROQ_MODEL,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        stream=True,
-    )
+    stream = None
+    for attempt in range(3):
+        try:
+            stream = client.chat.completions.create(
+                model=_GROQ_MODEL,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+            )
+            break
+        except Exception as e:
+            err = str(e)
+            if attempt < 2 and ("rate_limit" in err.lower() or "429" in err or "ratelimit" in err.lower()):
+                m = re.search(r'try again in ([\d.]+)ms', err, re.I)
+                time.sleep((float(m.group(1)) / 1000 + 0.3) if m else 2.0)
+            else:
+                raise
+    if stream is None:
+        return
     for chunk in stream:
         token = chunk.choices[0].delta.content or ""
         if token:

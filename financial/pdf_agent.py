@@ -1,34 +1,20 @@
 """
 PDFAgent — orchestrates the full PDF extraction pipeline.
 
-Steps per announcement
-----------------------
-1. Read `announcements` SQL table, filter by subjects listed in FilterConfig.pdf_subjects
-   AND attachment is a .pdf URL.
-2. Skip any symbol+URL already present in financial_results.
-3. Download the PDF via PDFDownloader.
-4. Route to the correct extractor based on extraction_type:
-   - "financial_results" → FinancialExtractor (Claude Opus, full P&L schema)
-   - all others         → GeneralExtractor   (Claude Haiku, key facts + summary)
-5. Persist FinancialResult to FinancialStorage (SQL + ChromaDB).
-6. Print live progress and return a run summary.
-
-Extraction types and their subjects
-------------------------------------
-  financial_results  — Outcome of Board Meeting
-  order_win          — Bagging/Receiving of orders/contracts, Awarding of order(s)/contract(s)
-  acquisition        — Acquisition
-  restructuring      — Amalgamation/Merger, Demerger, Scheme of Arrangement, Scheme of Amalgamation - NCLT Order
-  fundraising        — QIP, Rights Issue, Fund Raising - Preferential Issue
-  buyback            — Buyback
-  open_offer         — Public Announcement-Open Offer
-  credit_rating      — Credit Rating- Revision, Credit Rating- New
-  cirp               — Corporate Insolvency Resolution Process, Resolution Plan (for CIRP companies)
+Improvements:
+1. PDF cache (data/pdfs/) — avoids re-downloading on restart
+2. Phase-1 queue persistence (data/phase1_queue.json) — Ollama queue survives restarts
+3. Pipelined Phase 1 → Phase 2 — Ollama workers start before Phase 1 finishes
+4. OLLAMA_SUMMARY_MODEL — faster model for summary_only (set in local_extractor)
+5. 4 Ollama workers — better GPU utilisation (was 2)
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import queue as _queue
 import sqlite3
-import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,7 +38,7 @@ class RunSummary:
     failed_download:  int = 0
     failed_extract:   int = 0
     not_pdf:          int = 0
-    queued_ollama:    int = 0   # PDFs that needed Phase 2 Ollama
+    queued_ollama:    int = 0
     results:          list[FinancialResult] = field(default_factory=list)
 
     def print(self) -> None:
@@ -85,27 +71,13 @@ class RunSummary:
 # ── PDFAgent ──────────────────────────────────────────────────────────────────
 
 class PDFAgent:
-    """
-    Reads subject-matched announcements from SQL, downloads each PDF,
-    routes to the correct extractor, and persists the result.
-    """
+    _WORKERS = 32
+    _OLLAMA_SKIP    = {"press_release", "concall"}
+    _DOWNLOAD_SKIP  = {"press_release", "concall"}
+    _SUMMARY_TYPES  = {"summary_only"}
+    _OLLAMA_WORKERS = 4  # was 2 — improvement 5
 
-    _WORKERS = 32    # parallel download+extract workers (I/O-bound, safe to double)
-    # Types where fast-extract almost always succeeds; skip Ollama if fast fails
-    _OLLAMA_SKIP = {"press_release", "concall"}
-    # Types to skip entirely — don't even download, no financial data in them
-    _DOWNLOAD_SKIP = {"press_release", "concall"}
-    # summary_only: download + summarize, never run financial JSON schema
-    _SUMMARY_TYPES = {"summary_only"}
-    # Parallel Ollama workers — 2 is safe on a single-GPU machine (one runs,
-    # one waits in Ollama's queue; overlap hides I/O latency without OOM risk)
-    _OLLAMA_WORKERS = 2
-
-    def __init__(
-        self,
-        db_path:    Path | str,
-        chroma_path: Path | str,
-    ) -> None:
+    def __init__(self, db_path: Path | str, chroma_path: Path | str) -> None:
         self._db_path       = Path(db_path)
         self._chroma_path   = Path(chroma_path)
         self._downloader    = PDFDownloader()
@@ -113,40 +85,72 @@ class PDFAgent:
         self._fin_storage   = FinancialStorage(db_path, chroma_path)
         self._stmt_storage  = StatementStorage(db_path)
         self._pdf_subjects  = FilterConfig().pdf_subjects
+        # Improvement 1: local PDF cache
+        self._pdf_cache_dir = self._db_path.parent / "pdfs"
+        self._pdf_cache_dir.mkdir(exist_ok=True)
+        # Improvement 2: Phase 1 queue persistence
+        self._phase1_queue_file = self._db_path.parent / "phase1_queue.json"
+
+    # ── PDF cache (improvement 1) ─────────────────────────────────────────────
+
+    def _cache_path(self, url: str) -> Path:
+        return self._pdf_cache_dir / (hashlib.md5(url.encode()).hexdigest() + ".pdf")
+
+    def _cached_pdf(self, url: str) -> bytes | None:
+        p = self._cache_path(url)
+        return p.read_bytes() if p.exists() else None
+
+    def _save_to_cache(self, url: str, data: bytes) -> None:
+        try:
+            self._cache_path(url).write_bytes(data)
+        except Exception:
+            pass
+
+    # ── Phase 1 queue persistence (improvement 2) ─────────────────────────────
+
+    def _load_phase1_queue(self) -> dict[str, str]:
+        if self._phase1_queue_file.exists():
+            try:
+                return json.loads(self._phase1_queue_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {}
+
+    def _save_phase1_queue(self, q: dict[str, str]) -> None:
+        try:
+            self._phase1_queue_file.write_text(json.dumps(q), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _add_to_phase1_queue(self, url: str, extract_type: str) -> None:
+        q = self._load_phase1_queue()
+        q[url] = extract_type
+        self._save_phase1_queue(q)
+
+    def _remove_from_phase1_queue(self, url: str) -> None:
+        q = self._load_phase1_queue()
+        if url in q:
+            del q[url]
+            self._save_phase1_queue(q)
 
     # ── public ────────────────────────────────────────────────────────────────
 
     def run(
         self,
-        limit:   int | None = None,
-        symbol:  str | None = None,
-        date:    str | None = None,
-        subject: str | None = None,
+        limit:     int | None = None,
+        symbol:    str | None = None,
+        date:      str | None = None,
+        subject:   str | None = None,
         reextract: bool = False,
-        workers: int | None = None,
+        workers:   int | None = None,
     ) -> RunSummary:
-        """
-        Run the PDF extraction pipeline and return a RunSummary.
-
-        Parameters
-        ----------
-        limit     : process at most this many PDFs (None = all)
-        symbol    : restrict to one stock symbol
-        date      : restrict to broadcast_dt starting with this date string
-        subject   : restrict to one extraction_type (e.g. 'order_win') or exact subject name
-        reextract : re-process PDFs already in DB and overwrite their records
-        workers   : parallel workers for download+extract (default: _WORKERS)
-        """
         n_workers = workers or self._WORKERS
 
-        candidates = self._fetch_candidates(
-            symbol=symbol, date=date, subject=subject, limit=limit
-        )
+        candidates = self._fetch_candidates(symbol=symbol, date=date, subject=subject, limit=limit)
         summary = RunSummary(total_candidates=len(candidates))
 
-        # ── Filter: skip non-PDF, already-stored, and no-value types ────────────
         skipped_type = 0
-        to_process = []
+        to_process: list[dict] = []
         for row in candidates:
             url  = row["attachment"] or ""
             sym  = row["symbol"]
@@ -156,7 +160,7 @@ class PDFAgent:
             if not self._downloader.is_pdf_url(url):
                 summary.not_pdf += 1
             elif extract_type in self._DOWNLOAD_SKIP:
-                skipped_type += 1   # no financial data — skip download entirely
+                skipped_type += 1
             elif not reextract and self._already_stored(sym, url):
                 summary.skipped_done += 1
             else:
@@ -174,129 +178,214 @@ class PDFAgent:
             summary.print()
             return summary
 
-        # ── Phase 1: parallel download + fast extraction (no Ollama) ─────────
-        # Downloads and table/regex extraction run across n_workers threads.
-        # Ollama is deliberately excluded — single-GPU inference can't run in
-        # parallel anyway, so blocking worker threads on it wastes concurrency.
-        print(f"\nPhase 1 — download + fast extract: {len(to_process)} PDFs ({n_workers} workers)...")
+        # ── Improvement 2: load persisted Phase 1 → Ollama queue ──────────────
+        persisted_queue: dict[str, str] = {} if reextract else self._load_phase1_queue()
+        # Drop entries already saved to financial_results (Phase 2 completed for them)
+        persisted_queue = {
+            url: et for url, et in persisted_queue.items()
+            if not self._already_stored("", url)
+        }
 
-        completed = 0
+        url_to_row = {(row["attachment"] or ""): row for row in to_process}
+        persisted_urls = set(persisted_queue.keys())
+
+        resume_from_cache: list[tuple[dict, str]] = []  # (row, extract_type)
+        still_need_phase1: list[dict] = []
+
+        for url, et in persisted_queue.items():
+            row = url_to_row.get(url)
+            if row is None:
+                continue
+            if self._cached_pdf(url) is not None:
+                resume_from_cache.append((row, et))
+            else:
+                still_need_phase1.append(row)  # persisted but cache miss → re-download
+
+        for row in to_process:
+            if (row["attachment"] or "") not in persisted_urls:
+                still_need_phase1.append(row)
+
+        if resume_from_cache:
+            print(f"  Resuming {len(resume_from_cache)} PDFs from local cache (skipping re-download)")
+
+        # ── Thread-safe shared state ───────────────────────────────────────────
+        _lock          = threading.Lock()
         pending_saves: list[tuple[dict, FinancialResult, bytes | None]] = []
-        # (row, extracted_text, extraction_type, pdf_bytes_for_stmt)
-        needs_ollama: list[tuple[dict, str, str, bytes | None]] = []
+        ollama_total   = [len(resume_from_cache)]  # grows as Phase 1 queues items
+        ollama_done    = [0]
 
-        def _download_and_fast_extract(
-            row: dict,
-        ) -> tuple[dict, "FinancialResult | None", "str | None", "bytes | None", str]:
-            url  = row["attachment"] or ""
-            sym  = row["symbol"]
-            co   = row["company"]
-            dt   = row["broadcast_dt"] or ""
-            subj = row["subject"]
-            extract_type = self._pdf_subjects.get(subj, "order_win")
+        # Improvement 3: pipelined queue — Phase 2 workers start NOW
+        ollama_q: _queue.Queue = _queue.Queue()
 
-            pdf_bytes, dl_status = self._downloader.download(url)
-            if pdf_bytes is None:
-                return row, None, None, None, f"dl_fail:{dl_status}"
-
-            try:
-                result, text = self._extractor.fast_extract(
-                    pdf_bytes       = pdf_bytes,
-                    symbol          = sym,
-                    company         = co,
-                    broadcast_dt    = dt,
-                    source_url      = url,
-                    extraction_type = extract_type,
-                )
-            except Exception as exc:
-                return row, None, None, None, f"extract_err:{exc}"
-            kb = len(pdf_bytes) // 1024
-            # Keep raw bytes only for financial_results — needed for statement extraction
-            bytes_for_stmt = pdf_bytes if extract_type == "financial_results" else None
-            return row, result, text, bytes_for_stmt, f"ok:{kb}kb"
-
-        with ThreadPoolExecutor(max_workers=n_workers) as pool:
-            futures = {pool.submit(_download_and_fast_extract, row): row for row in to_process}
-            for future in as_completed(futures):
-                completed += 1
-                row, result, text, pdf_bytes, status = future.result()
-                sym  = row["symbol"]
-                subj = row["subject"]
-
-                if status.startswith("dl_fail"):
-                    print(f"  [{completed}/{len(to_process)}] DL FAIL  {sym}", flush=True)
-                    summary.failed_download += 1
-                elif result is not None:
-                    rev = f"Rev {result.revenue_cr:.0f}cr" if result.revenue_cr else ""
-                    pat = f"PAT {result.pat_cr:.0f}cr"     if result.pat_cr    else ""
-                    print(f"  [{completed}/{len(to_process)}] FAST  {sym}  [{result.period}]  {rev}  {pat}", flush=True)
-                    pending_saves.append((row, result, pdf_bytes))
-                    summary.extracted += 1
-                    summary.results.append(result)
-                elif text is not None:
-                    extract_type = self._pdf_subjects.get(subj, "order_win")
-                    if extract_type in self._OLLAMA_SKIP:
-                        print(f"  [{completed}/{len(to_process)}] SKIP  {sym}  (no fast-extract for {extract_type})", flush=True)
-                        summary.failed_extract += 1
-                    else:
-                        print(f"  [{completed}/{len(to_process)}] QUEUE  {sym}  -> Ollama ({extract_type})", flush=True)
-                        needs_ollama.append((row, text, extract_type, pdf_bytes))
-                        summary.queued_ollama += 1
-                else:
-                    kb_info = status.split(":")[1] if ":" in status else ""
-                    print(f"  [{completed}/{len(to_process)}] FAIL  {sym}  {kb_info}", flush=True)
-                    summary.failed_extract += 1
-
-        # ── Phase 2: parallel Ollama pass ─────────────────────────────────────
-        # _OLLAMA_WORKERS=2 overlaps one GPU request with one waiting in Ollama's
-        # queue — safe on 6GB VRAM with llama3:latest (4.7GB model).
-        if needs_ollama:
-            print(f"\nPhase 2 — Ollama: {len(needs_ollama)} PDFs queued ({self._OLLAMA_WORKERS} workers)...")
-            ollama_done = 0
-            ollama_lock = __import__("threading").Lock()
-
-            def _run_ollama(
-                item: tuple[dict, str, str, "bytes | None"],
-            ) -> tuple[dict, "FinancialResult | None", "bytes | None"]:
+        def _phase2_worker() -> None:
+            while True:
+                item = ollama_q.get()
+                if item is None:
+                    ollama_q.task_done()
+                    break
                 row, text, extract_type, pdf_bytes = item
+                sym = row["symbol"]
                 result = self._extractor.ollama_extract(
                     text            = text,
-                    symbol          = row["symbol"],
+                    symbol          = sym,
                     company         = row["company"],
                     broadcast_dt    = row["broadcast_dt"] or "",
                     source_url      = row["attachment"] or "",
                     extraction_type = extract_type,
                     pdf_bytes       = pdf_bytes,
                 )
-                return row, result, pdf_bytes
-
-            with ThreadPoolExecutor(max_workers=self._OLLAMA_WORKERS) as pool:
-                futures = {pool.submit(_run_ollama, item): item for item in needs_ollama}
-                for future in as_completed(futures):
-                    row, result, pdf_bytes = future.result()
-                    sym = row["symbol"]
-                    with ollama_lock:
-                        ollama_done += 1
-                        idx = ollama_done
+                url = row["attachment"] or ""
+                self._remove_from_phase1_queue(url)
+                with _lock:
+                    ollama_done[0] += 1
+                    idx   = ollama_done[0]
+                    total = ollama_total[0]
                     if result is None:
-                        print(f"  [{idx}/{len(needs_ollama)}] {sym}  FAIL", flush=True)
+                        print(f"  [{idx}/{total}] {sym}  FAIL", flush=True)
                         summary.failed_extract += 1
                     else:
                         rev = f"Rev {result.revenue_cr:.0f}cr" if result.revenue_cr else ""
                         pat = f"PAT {result.pat_cr:.0f}cr"     if result.pat_cr    else ""
-                        print(f"  [{idx}/{len(needs_ollama)}] {sym}  OK  [{result.period}]  {rev}  {pat}", flush=True)
+                        print(f"  [{idx}/{total}] {sym}  OK  [{result.period}]  {rev}  {pat}", flush=True)
                         pending_saves.append((row, result, pdf_bytes))
                         summary.extracted += 1
                         summary.results.append(result)
+                ollama_q.task_done()
 
-        # ── Serial DB + ChromaDB writes (fast — not the bottleneck) ───────────
+        phase2_threads = [
+            threading.Thread(target=_phase2_worker, daemon=True, name=f"ollama-{i}")
+            for i in range(self._OLLAMA_WORKERS)
+        ]
+        for t in phase2_threads:
+            t.start()
+
+        # ── Feed resumed cached items straight to Phase 2 ─────────────────────
+        if resume_from_cache:
+            print(f"\nPhase 2 — resuming {len(resume_from_cache)} cached PDFs ({self._OLLAMA_WORKERS} workers)...")
+            for row, extract_type in resume_from_cache:
+                url       = row["attachment"] or ""
+                pdf_bytes = self._cached_pdf(url)
+                if pdf_bytes is None:
+                    continue
+                try:
+                    result, text = self._extractor.fast_extract(
+                        pdf_bytes       = pdf_bytes,
+                        symbol          = row["symbol"],
+                        company         = row["company"],
+                        broadcast_dt    = row["broadcast_dt"] or "",
+                        source_url      = url,
+                        extraction_type = extract_type,
+                    )
+                except Exception:
+                    result, text = None, ""
+                if result is not None:
+                    with _lock:
+                        pending_saves.append((row, result, pdf_bytes if extract_type == "financial_results" else None))
+                        summary.extracted += 1
+                        summary.results.append(result)
+                    self._remove_from_phase1_queue(url)
+                elif text:
+                    bytes_for_stmt = pdf_bytes if extract_type == "financial_results" else None
+                    ollama_q.put((row, text, extract_type, bytes_for_stmt))
+                    with _lock:
+                        summary.queued_ollama += 1
+
+        # ── Phase 1: parallel download + fast extract ──────────────────────────
+        if still_need_phase1:
+            print(f"\nPhase 1 — download + fast extract: {len(still_need_phase1)} PDFs ({n_workers} workers)...")
+            completed = 0
+
+            def _download_and_fast_extract(row: dict):
+                url  = row["attachment"] or ""
+                sym  = row["symbol"]
+                co   = row["company"]
+                dt   = row["broadcast_dt"] or ""
+                subj = row["subject"]
+                extract_type = self._pdf_subjects.get(subj, "order_win")
+
+                # Improvement 1: hit cache before network
+                pdf_bytes = self._cached_pdf(url)
+                if pdf_bytes is None:
+                    pdf_bytes, dl_status = self._downloader.download(url)
+                    if pdf_bytes is None:
+                        return row, None, None, None, f"dl_fail:{dl_status}"
+                    self._save_to_cache(url, pdf_bytes)
+
+                try:
+                    result, text = self._extractor.fast_extract(
+                        pdf_bytes       = pdf_bytes,
+                        symbol          = sym,
+                        company         = co,
+                        broadcast_dt    = dt,
+                        source_url      = url,
+                        extraction_type = extract_type,
+                    )
+                except Exception as exc:
+                    return row, None, None, None, f"extract_err:{exc}"
+                kb = len(pdf_bytes) // 1024
+                bytes_for_stmt = pdf_bytes if extract_type == "financial_results" else None
+                return row, result, text, bytes_for_stmt, f"ok:{kb}kb"
+
+            with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                futures = {pool.submit(_download_and_fast_extract, row): row for row in still_need_phase1}
+                for future in as_completed(futures):
+                    row, result, text, pdf_bytes, status = future.result()
+                    sym  = row["symbol"]
+                    subj = row["subject"]
+                    url  = row["attachment"] or ""
+                    with _lock:
+                        completed += 1
+                        idx = completed
+
+                    if status.startswith("dl_fail"):
+                        print(f"  [{idx}/{len(still_need_phase1)}] DL FAIL  {sym}", flush=True)
+                        with _lock:
+                            summary.failed_download += 1
+                    elif result is not None:
+                        rev = f"Rev {result.revenue_cr:.0f}cr" if result.revenue_cr else ""
+                        pat = f"PAT {result.pat_cr:.0f}cr"     if result.pat_cr    else ""
+                        print(f"  [{idx}/{len(still_need_phase1)}] FAST  {sym}  [{result.period}]  {rev}  {pat}", flush=True)
+                        with _lock:
+                            pending_saves.append((row, result, pdf_bytes))
+                            summary.extracted += 1
+                            summary.results.append(result)
+                    elif text is not None:
+                        extract_type = self._pdf_subjects.get(subj, "order_win")
+                        if extract_type in self._OLLAMA_SKIP:
+                            print(f"  [{idx}/{len(still_need_phase1)}] SKIP  {sym}", flush=True)
+                            with _lock:
+                                summary.failed_extract += 1
+                        else:
+                            print(f"  [{idx}/{len(still_need_phase1)}] QUEUE  {sym}  -> Ollama ({extract_type})", flush=True)
+                            # Improvement 2: persist queue entry so restart can resume
+                            self._add_to_phase1_queue(url, extract_type)
+                            bytes_for_stmt = pdf_bytes if extract_type == "financial_results" else None
+                            # Improvement 3: feed directly to live Phase 2 workers
+                            ollama_q.put((row, text, extract_type, bytes_for_stmt))
+                            with _lock:
+                                summary.queued_ollama += 1
+                                ollama_total[0] += 1
+                    else:
+                        kb_info = status.split(":")[1] if ":" in status else ""
+                        print(f"  [{idx}/{len(still_need_phase1)}] FAIL  {sym}  {kb_info}", flush=True)
+                        with _lock:
+                            summary.failed_extract += 1
+
+        # Signal Phase 2 workers to stop and wait
+        for _ in range(self._OLLAMA_WORKERS):
+            ollama_q.put(None)
+        if ollama_total[0] > 0:
+            print(f"\nPhase 2 — Ollama: {ollama_total[0]} PDFs ({self._OLLAMA_WORKERS} workers) — waiting for completion...")
+        for t in phase2_threads:
+            t.join()
+
+        # ── Serial DB + ChromaDB writes ────────────────────────────────────────
         print(f"\nSaving {len(pending_saves)} results...")
         for _row, result, pdf_bytes in pending_saves:
             if reextract:
                 self._fin_storage.save_or_update(result)
             else:
                 self._fin_storage.save(result)
-            # Also extract the full P&L table for the Compare tab
             if pdf_bytes is not None:
                 try:
                     stmt = extract_full_statement(
@@ -311,9 +400,13 @@ class PDFAgent:
                 except Exception:
                     pass
 
+        # Clean up phase1_queue if empty
+        remaining = self._load_phase1_queue()
+        if not remaining:
+            self._phase1_queue_file.unlink(missing_ok=True)
+
         self._fin_storage.close()
         self._stmt_storage.close()
-        # Reopen storage so this agent instance can be called again (run() reopens fresh)
         self._fin_storage  = FinancialStorage(self._db_path, self._chroma_path)
         self._stmt_storage = StatementStorage(self._db_path)
         summary.print()
@@ -328,43 +421,27 @@ class PDFAgent:
         subject: str | None,
         limit:   int | None,
     ) -> list[dict[str, Any]]:
-        """
-        Query announcements table for rows whose subject is in pdf_subjects
-        AND have a PDF attachment.
-        """
         conn = sqlite3.connect(str(self._db_path))
         conn.row_factory = sqlite3.Row
-
-        # Build IN clause from config
         subjects = list(self._pdf_subjects.keys())
         placeholders = ",".join("?" * len(subjects))
         params: list[Any] = subjects[:]
-
-        clauses = [
-            f"subject IN ({placeholders})",
-            "attachment LIKE '%.pdf'",
-        ]
-
+        clauses = [f"subject IN ({placeholders})", "attachment LIKE '%.pdf'"]
         if symbol:
             clauses.append("symbol = ?")
             params.append(symbol.upper())
-
         if date:
             clauses.append("broadcast_dt LIKE ?")
             params.append(f"{date}%")
-
         if subject:
-            # Allow filtering by extraction_type (e.g. "order_win") or exact subject
             matched = [s for s, t in self._pdf_subjects.items()
                        if t == subject or s == subject]
             if matched:
                 ph = ",".join("?" * len(matched))
                 clauses.append(f"subject IN ({ph})")
                 params.extend(matched)
-
         where = " AND ".join(clauses)
         lim   = f" LIMIT {limit}" if limit else ""
-
         sql = (
             f"SELECT symbol, company, subject, attachment, broadcast_dt "
             f"FROM announcements WHERE {where} "
@@ -375,9 +452,14 @@ class PDFAgent:
         return rows
 
     def _already_stored(self, symbol: str, source_url: str) -> bool:
-        """Check if this exact PDF URL was already processed."""
-        row = self._fin_storage._conn.execute(
-            "SELECT 1 FROM financial_results WHERE symbol=? AND source_url=?",
-            (symbol, source_url),
-        ).fetchone()
+        if symbol:
+            row = self._fin_storage._conn.execute(
+                "SELECT 1 FROM financial_results WHERE symbol=? AND source_url=?",
+                (symbol, source_url),
+            ).fetchone()
+        else:
+            row = self._fin_storage._conn.execute(
+                "SELECT 1 FROM financial_results WHERE source_url=?",
+                (source_url,),
+            ).fetchone()
         return row is not None

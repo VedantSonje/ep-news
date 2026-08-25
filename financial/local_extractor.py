@@ -105,7 +105,9 @@ from financial.rule_extractor import try_rule_extract, extract_order_win_from_ta
 from financial.financial_table_extractor import extract_financial_table
 
 
-_OLLAMA_MODEL   = "llama3.1:latest"
+import os as _os
+_OLLAMA_MODEL         = _os.getenv("OLLAMA_MODEL", "llama3.1:latest")
+_OLLAMA_SUMMARY_MODEL = _os.getenv("OLLAMA_SUMMARY_MODEL", _OLLAMA_MODEL)
 _MAX_TEXT_CHARS = 10_000   # chars per section sent to Ollama
 _MAX_CHUNK_CHARS = 80_000  # max raw text retained for section-aware chunking
 
@@ -844,7 +846,7 @@ class LocalExtractor:
         try:
             import ollama as _ollama
             resp = _ollama.chat(
-                model=_OLLAMA_MODEL,
+                model=_OLLAMA_SUMMARY_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 options={"temperature": 0, "num_gpu": 99, "num_predict": 200},
             )
@@ -1022,22 +1024,27 @@ class LocalExtractor:
     # ── Ollama JSON call ──────────────────────────────────────────────────────
 
     def _ollama_json(self, prompt: str) -> dict | None:
-        """Call LLM with JSON mode and return the parsed dict, or None on error."""
+        """Call local Ollama with JSON mode — always local, never Groq."""
         try:
-            from api.llm_client import llm_json, ACTIVE_PROVIDER
-            raw = llm_json([{"role": "user", "content": prompt}], temperature=0, max_tokens=1024)
-            print(f"    [{ACTIVE_PROVIDER}] response {len(raw)} chars", flush=True)
-            # Strip markdown fences Groq occasionally wraps around JSON
-            raw = raw.strip()
-            if raw.startswith("```"):
-                import re as _re
-                raw = _re.sub(r"```(?:json)?\s*", "", raw, flags=_re.IGNORECASE).strip()
+            import ollama as _ollama
+            _model = os.getenv("OLLAMA_MODEL", "llama3.1:latest")
+            resp = _ollama.chat(
+                model=_model,
+                messages=[{"role": "user", "content": prompt}],
+                format="json",
+                options={"temperature": 0, "num_gpu": 99},
+            )
+            try:
+                raw = resp.message.content or ""
+            except AttributeError:
+                raw = resp["message"]["content"] or ""
+            print(f"    [ollama] response {len(raw)} chars", flush=True)
             return json.loads(raw)
         except json.JSONDecodeError as e:
-            print(f"    [llm] JSON parse error: {e}", flush=True)
+            print(f"    [ollama] JSON parse error: {e}", flush=True)
             return None
         except Exception as e:
-            print(f"    [llm] ERROR: {e}", flush=True)
+            print(f"    [ollama] ERROR: {e}", flush=True)
             return None
 
     # ── Ollama calls with Pydantic validation ────────────────────────────────

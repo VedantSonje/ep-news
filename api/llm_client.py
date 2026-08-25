@@ -1,18 +1,19 @@
 """
 Unified LLM client — routes to Groq (cloud) or Ollama (local).
 
-Priority: GROQ_API_KEY set → Groq cloud; otherwise → Ollama local.
-Drop-in replacement so chat_handler and local_extractor need no
-provider-specific logic.
+Priority: GROQ_API_KEY set → Groq cloud (Gemini as rate-limit fallback);
+          otherwise → Ollama local.
 """
 from __future__ import annotations
 
 import os
 from typing import Generator
 
-_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-_GROQ_MODEL   = os.getenv("GROQ_MODEL",   "groq/compound-mini")
-_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL",  "llama3.1:latest")
+_GROQ_API_KEY   = os.getenv("GROQ_API_KEY",   "")
+_GROQ_MODEL     = os.getenv("GROQ_MODEL",      "groq/compound-mini")
+_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY",  "")
+_GEMINI_MODEL   = os.getenv("GEMINI_MODEL",    "gemini-3.6-flash")
+_OLLAMA_MODEL   = os.getenv("OLLAMA_MODEL",    "llama3.1:latest")
 
 ACTIVE_PROVIDER = "groq" if _GROQ_API_KEY else "ollama"
 ACTIVE_MODEL    = _GROQ_MODEL if _GROQ_API_KEY else _OLLAMA_MODEL
@@ -95,22 +96,26 @@ def _groq_complete(messages, temperature, max_tokens) -> str:
     import time
     from groq import Groq
     client = Groq(api_key=_GROQ_API_KEY)
+    last_err = ""
     for attempt in range(3):
         try:
             resp = client.chat.completions.create(
-                model=_GROQ_MODEL,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
+                model=_GROQ_MODEL, messages=messages,
+                temperature=temperature, max_tokens=max_tokens,
             )
             return resp.choices[0].message.content or ""
         except Exception as e:
-            err = str(e)
-            if attempt < 2 and ("rate_limit" in err.lower() or "429" in err or "ratelimit" in err.lower()):
-                time.sleep(_rate_limit_wait(err))
+            last_err = str(e)
+            if attempt < 2 and ("rate_limit" in last_err.lower() or "429" in last_err or "ratelimit" in last_err.lower()):
+                time.sleep(_rate_limit_wait(last_err))
             else:
-                raise
-    return ""
+                break
+    # Groq exhausted — fall back to Gemini if available
+    if _GEMINI_API_KEY and ("rate_limit" in last_err.lower() or "429" in last_err):
+        result = _gemini_complete(messages, temperature, max_tokens)
+        if result:
+            return result
+    raise RuntimeError(last_err)
 
 
 def _groq_stream(messages, temperature, max_tokens) -> Generator[str, None, None]:
@@ -118,28 +123,72 @@ def _groq_stream(messages, temperature, max_tokens) -> Generator[str, None, None
     from groq import Groq
     client = Groq(api_key=_GROQ_API_KEY)
     stream = None
+    last_err = ""
     for attempt in range(3):
         try:
             stream = client.chat.completions.create(
-                model=_GROQ_MODEL,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
+                model=_GROQ_MODEL, messages=messages,
+                temperature=temperature, max_tokens=max_tokens,
                 stream=True,
             )
             break
         except Exception as e:
-            err = str(e)
-            if attempt < 2 and ("rate_limit" in err.lower() or "429" in err or "ratelimit" in err.lower()):
-                time.sleep(_rate_limit_wait(err))
+            last_err = str(e)
+            if attempt < 2 and ("rate_limit" in last_err.lower() or "429" in last_err or "ratelimit" in last_err.lower()):
+                time.sleep(_rate_limit_wait(last_err))
             else:
-                raise
-    if stream is None:
+                break
+    if stream is not None:
+        for chunk in stream:
+            token = chunk.choices[0].delta.content or ""
+            if token:
+                yield token
         return
-    for chunk in stream:
-        token = chunk.choices[0].delta.content or ""
-        if token:
-            yield token
+    # Groq exhausted — fall back to Gemini if available
+    if _GEMINI_API_KEY and ("rate_limit" in last_err.lower() or "429" in last_err):
+        yield from _gemini_stream(messages, temperature, max_tokens)
+        return
+    raise RuntimeError(last_err)
+
+
+# ── Gemini fallback (used when Groq is rate-limited) ─────────────────────────
+
+def _gemini_complete(messages: list[dict], temperature: float, max_tokens: int) -> str:
+    if not _GEMINI_API_KEY:
+        return ""
+    try:
+        from google import genai as _genai
+        from google.genai import types as _gtypes
+        client = _genai.Client(api_key=_GEMINI_API_KEY)
+        contents = [
+            {"role": "user" if m["role"] == "user" else "model", "parts": [{"text": m["content"]}]}
+            for m in messages if m.get("content") and m.get("role") in ("user", "assistant", "system")
+        ]
+        cfg = _gtypes.GenerateContentConfig(temperature=temperature, max_output_tokens=max_tokens)
+        resp = client.models.generate_content(model=_GEMINI_MODEL, contents=contents, config=cfg)
+        return resp.text or ""
+    except Exception:
+        return ""
+
+
+def _gemini_stream(messages: list[dict], temperature: float, max_tokens: int) -> Generator[str, None, None]:
+    if not _GEMINI_API_KEY:
+        return
+    try:
+        from google import genai as _genai
+        from google.genai import types as _gtypes
+        client = _genai.Client(api_key=_GEMINI_API_KEY)
+        contents = [
+            {"role": "user" if m["role"] == "user" else "model", "parts": [{"text": m["content"]}]}
+            for m in messages if m.get("content") and m.get("role") in ("user", "assistant", "system")
+        ]
+        cfg = _gtypes.GenerateContentConfig(temperature=temperature, max_output_tokens=max_tokens)
+        for chunk in client.models.generate_content_stream(model=_GEMINI_MODEL, contents=contents, config=cfg):
+            text = chunk.text or ""
+            if text:
+                yield text
+    except Exception:
+        return
 
 
 # ── Ollama ────────────────────────────────────────────────────────────────────

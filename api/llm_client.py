@@ -11,7 +11,7 @@ import os
 from typing import Generator
 
 _GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-_GROQ_MODEL   = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
+_GROQ_MODEL   = os.getenv("GROQ_MODEL",   "groq/compound-mini")
 _OLLAMA_MODEL = os.getenv("OLLAMA_MODEL",  "llama3.1:latest")
 
 ACTIVE_PROVIDER = "groq" if _GROQ_API_KEY else "ollama"

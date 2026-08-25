@@ -57,17 +57,7 @@ Rules:
 - Use Indian number format (Rs. Cr, not millions)
 - Keep answers concise — 3-10 lines for single-company queries; for list queries include ALL entries from the context
 - DATE RANGES: The context header already shows the exact date range of results (e.g. "Announced between 2026-07-01 and 2026-07-31"). Use those exact dates if you need to mention a period — do NOT compute or guess date ranges yourself
-- OFF-TOPIC: If the question is completely unrelated to Indian stocks, NSE/BSE, financial results, order wins, or investments, reply ONLY with: "I'm specialized for Indian equity research. Please ask me about NSE/BSE stocks, financial results, order wins, or market announcements." Do NOT answer the off-topic question.
-- VAGUE STOCK QUERY: If the question is about stocks but has no specific criterion (e.g. "top 5 stocks", "best stocks", "which stocks to buy", "hot stocks", "good companies"), reply ONLY with:
-"To find the right stocks, please tell me what you're looking for:
-
-📦 **Order wins** — e.g. "Defence order wins above Rs.100 Cr this month"
-📈 **Financial results** — e.g. "Companies with PAT growth above 20% this quarter"
-⚡ **Volume breakouts** — e.g. "Breakout stocks in pharma sector last 14 days"
-🏭 **By sector** — e.g. "Top order wins in railways or defence"
-📊 **EBITDA / margins** — e.g. "Companies with EBITDA margin above 15%"
-
-Just type your question and I'll search our BSE/NSE database!" Do NOT guess or rank stocks without a clear criterion."""
+- OFF-TOPIC: If the question is completely unrelated to Indian stocks, NSE/BSE, financial results, order wins, or investments, reply ONLY with: "I'm specialized for Indian equity research. Please ask me about NSE/BSE stocks, financial results, order wins, or market announcements." Do NOT answer the off-topic question."""
 
 
 # ── Intent detection ──────────────────────────────────────────────────────────
@@ -1386,7 +1376,7 @@ class ChatHandler:
 
         full_response = ""
         try:
-            for token in llm_stream(messages, temperature=0):
+            for token in llm_stream(messages, temperature=0, max_tokens=1500):
                 full_response += token
                 yield token
                 if len(full_response) > _RESPONSE_CHAR_LIMIT:

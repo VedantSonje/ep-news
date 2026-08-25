@@ -77,8 +77,22 @@ def llm_stream(
 
 # ── Groq ──────────────────────────────────────────────────────────────────────
 
+def _rate_limit_wait(err: str) -> float:
+    """Parse Groq rate-limit error and return seconds to sleep."""
+    import re as _re
+    # "try again in 1.5675s"  (seconds)
+    m = _re.search(r'try again in ([\d.]+)s\b', err, _re.I)
+    if m:
+        return float(m.group(1)) + 0.5
+    # "try again in 772.5ms"  (milliseconds)
+    m = _re.search(r'try again in ([\d.]+)ms', err, _re.I)
+    if m:
+        return float(m.group(1)) / 1000 + 0.3
+    return 3.0   # safe fallback
+
+
 def _groq_complete(messages, temperature, max_tokens) -> str:
-    import re, time
+    import time
     from groq import Groq
     client = Groq(api_key=_GROQ_API_KEY)
     for attempt in range(3):
@@ -93,15 +107,14 @@ def _groq_complete(messages, temperature, max_tokens) -> str:
         except Exception as e:
             err = str(e)
             if attempt < 2 and ("rate_limit" in err.lower() or "429" in err or "ratelimit" in err.lower()):
-                m = re.search(r'try again in ([\d.]+)ms', err, re.I)
-                time.sleep((float(m.group(1)) / 1000 + 0.3) if m else 2.0)
+                time.sleep(_rate_limit_wait(err))
             else:
                 raise
     return ""
 
 
 def _groq_stream(messages, temperature, max_tokens) -> Generator[str, None, None]:
-    import re, time
+    import time
     from groq import Groq
     client = Groq(api_key=_GROQ_API_KEY)
     stream = None
@@ -118,8 +131,7 @@ def _groq_stream(messages, temperature, max_tokens) -> Generator[str, None, None
         except Exception as e:
             err = str(e)
             if attempt < 2 and ("rate_limit" in err.lower() or "429" in err or "ratelimit" in err.lower()):
-                m = re.search(r'try again in ([\d.]+)ms', err, re.I)
-                time.sleep((float(m.group(1)) / 1000 + 0.3) if m else 2.0)
+                time.sleep(_rate_limit_wait(err))
             else:
                 raise
     if stream is None:

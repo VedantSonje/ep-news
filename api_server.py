@@ -267,6 +267,24 @@ async def stats():
     return handler.stats()
 
 
+@app.get("/api/debug/retrieve")
+async def debug_retrieve(q: str = "hi"):
+    """Temporary debug endpoint — remove after diagnosing chat hang."""
+    _require_ready()
+    import asyncio, concurrent.futures
+    loop = asyncio.get_event_loop()
+    try:
+        results, intent, min_cr = await asyncio.wait_for(
+            loop.run_in_executor(None, handler.retrieve, q),
+            timeout=10.0,
+        )
+        return {"ok": True, "intent": intent, "count": len(results), "min_cr": min_cr}
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": "retrieve() timed out after 10s"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/suggestions")
 async def suggestions():
     _require_ready()

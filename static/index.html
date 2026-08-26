@@ -211,6 +211,7 @@
     .badge-announcements { background: #6d28d920; color: #c084fc; border: 1px solid #9333ea40; }
     .badge-all           { background: #92400e20; color: #fbbf24; border: 1px solid #f59e0b40; }
     .badge-multi_hop     { background: #6d28d9; color: #fff; }
+    .badge-scan          { background: #7c3aed30; color: #a78bfa; border: 1px solid #7c3aed50; }
 
     /* Web search indicator */
     .web-badge {
@@ -1198,47 +1199,51 @@
     loadBrief();   // fetch and render Today's Brief card if available
   }
 
-  // ── Power Prompt definitions ───────────────────────────────────────────────
+  // ── Power Prompt definitions (matched to backend scan_agent.py triggers) ──
   const POWER_PROMPTS = [
     {
-      icon: '📊', label: 'Daily Scanner',
-      prompt: 'Scan all NSE announcements from the last 7 days. Identify and rank the top 10 highest-potential market-moving catalysts. For each, mention: Company, Ticker, Catalyst Type, Key Details, and Estimated Impact (High/Medium/Low) with reasoning.'
+      icon: '🔀', label: 'M&A Scan',
+      prompt: 'Show recent merger and acquisition announcements from the last 30 days'
     },
     {
-      icon: '📅', label: 'Upcoming Catalysts',
-      prompt: 'List all companies with upcoming or recently announced material events in the next 15 days. Prioritize earnings results, regulatory approvals, dividend announcements, board meetings with important decisions, and corporate actions.'
+      icon: '💰', label: 'QIP / Fundraising',
+      prompt: 'Which companies announced QIP or preferential allotment recently?'
     },
     {
-      icon: '🎯', label: 'High-Conviction Filter',
-      prompt: "Search the database for announcements containing words like 'approval', 'order win', 'patent', 'merger', 'acquisition', 'preferential allotment', 'QIP', 'bonus', or 'Regulation 30'. Summarize the most significant ones with potential stock price impact."
+      icon: '💊', label: 'Pharma Approvals',
+      prompt: 'Show USFDA drug approval announcements this month'
     },
     {
-      icon: '🏭', label: 'Sector-Wise Report',
-      prompt: 'Provide a sector-wise summary of major catalysts from the last 30 days across Pharma, IT, Banking, Auto, Infrastructure, Defense, and Renewable Energy. Highlight the strongest opportunities in each sector.'
+      icon: '📦', label: 'Big Order Wins',
+      prompt: 'Top order wins above Rs.100 Cr — rank by order value'
     },
     {
-      icon: '🔄', label: 'Turnaround Detector',
-      prompt: 'Find companies that announced unexpected positive developments such as moving from losses to profits, large unexpected orders, debt reduction, or regulatory clearances in the last 30 days.'
+      icon: '🛡️', label: 'Defence Sector',
+      prompt: 'Defence sector order wins and contracts this quarter'
     },
     {
-      icon: '👔', label: 'Insider & Corp Actions',
-      prompt: 'Identify recent announcements related to promoter buying, insider trades, share buybacks, stake sales, or changes in management/board. Flag any potentially bullish signals.'
+      icon: '🏭', label: 'Capex / Expansion',
+      prompt: 'Companies announcing capacity expansion or capex plans recently'
     },
     {
-      icon: '⚡', label: 'Material Event Deep Dive',
-      prompt: "Query all announcements marked as 'material' or 'price sensitive' in the last 10 days. Provide detailed summaries and explain why they could significantly move the stock price."
+      icon: '🎁', label: 'Bonus & Dividends',
+      prompt: 'Recent bonus issue and dividend announcements this month'
     },
     {
-      icon: '📈', label: 'Comparative Analysis',
-      prompt: "Compare today's NSE announcements with the previous 3 days. Highlight any new major catalysts and companies showing follow-up developments or escalation of earlier events."
+      icon: '📈', label: 'PAT Growth Leaders',
+      prompt: 'Which companies had the highest PAT growth this quarter?'
     },
     {
-      icon: '📋', label: 'Watchlist Checker',
-      prompt: 'Review the following companies and flag any new catalysts, updates, or material announcements from the NSE database in the last 30 days: [insert your tickers here, e.g. RELIANCE, TCS, INFY, HDFC, WIPRO]'
+      icon: '📊', label: 'Revenue Growth',
+      prompt: 'Companies with highest revenue growth this quarter'
     },
     {
-      icon: '💎', label: 'Best Risk-Reward',
-      prompt: 'From the last 30 days of NSE announcements, recommend the top 5–7 stocks with the strongest catalyst-driven upside potential. Include catalyst details, timeline, and key risks for each.'
+      icon: '💎', label: 'High EBITDA Margin',
+      prompt: 'Companies with highest EBITDA margin in recent results'
+    },
+    {
+      icon: '⚡', label: 'Breakout + Catalyst',
+      prompt: 'Volume breakout stocks with news catalyst — what caused the breakout?'
     },
   ];
 
@@ -1284,6 +1289,7 @@
       all:          '🔍 All Sources',
       volume_breakout: '⚡ Breakouts',
       multi_hop:    '🔀 Multi-hop',
+      scan:         '🤖 Agent Scan',
     };
     const badgeRow = document.createElement('div');
     badgeRow.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:8px;';
@@ -1292,7 +1298,9 @@
     const badge = document.createElement('span');
     badge.className = `badge badge-${intent}`;
     badge.style.marginBottom = '0';
-    badge.textContent = labels[intent] || intent;
+    badge.textContent = (intent === 'scan' && meta && meta.power_name)
+      ? `🤖 ${meta.power_name}`
+      : (labels[intent] || intent);
     badgeRow.appendChild(badge);
 
     // Web search badge (shown when web_search:true in meta)

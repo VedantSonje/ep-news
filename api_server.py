@@ -490,6 +490,13 @@ async def get_brief(date: str = ""):
     return {"available": True, **brief}
 
 
+@app.get("/api/scan/prompts")
+async def scan_prompts():
+    """Return the 11 power prompt definitions for the sidebar UI."""
+    from api.scan_agent import list_power_prompts
+    return {"prompts": list_power_prompts()}
+
+
 @app.post("/api/brief/generate")
 async def trigger_brief(req_date: str = "", x_api_key: str | None = Header(default=None)):
     """Manually trigger brief generation for a date (for testing). Requires EP_ADMIN_KEY."""
@@ -656,6 +663,31 @@ async def chat(req: ChatRequest):
             yield f"data: {json.dumps({'type':'token','text':err})}\n\n"
             yield f"data: {json.dumps({'type':'done'})}\n\n"
         return StreamingResponse(_bad(), media_type="text/event-stream")
+
+    # ── Power prompt check — runs BEFORE vague/heavy filters ─────────────────
+    from api.scan_agent import detect_power_prompt, run_power_prompt as _run_pp
+    _pp = detect_power_prompt(req.message.strip())
+    if _pp:
+        _pp_id   = _pp["id"]
+        _pp_name = _pp["name"]
+        _pp_db   = cfg.db_path
+
+        def _pp_gen():
+            meta_ev = {
+                "type": "meta", "intent": "scan",
+                "count": 0, "sources": [],
+                "power_prompt": _pp_id, "power_name": _pp_name,
+            }
+            yield f"data: {json.dumps(meta_ev)}\n\n"
+            try:
+                for token in _run_pp(req.message.strip(), _pp_db, _pp):
+                    yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+            except RateLimitError as exc:
+                wait = max(int(_rate_limit_wait(str(exc)) + 1), 10)
+                yield f"data: {json.dumps({'type': 'rate_limit', 'seconds': wait})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        return StreamingResponse(_pp_gen(), media_type="text/event-stream")
 
     if _VAGUE_RE.match(req.message.strip()):
         async def _vague():

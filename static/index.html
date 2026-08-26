@@ -812,6 +812,66 @@
       font-size: 13px; line-height: 2;
     }
     .inv-placeholder .inv-pl-icon { font-size: 34px; display: block; margin-bottom: 10px; opacity: .6; }
+
+    /* ── Screener tab ── */
+    #screener-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .scr-cats {
+      display: flex; gap: 0; padding: 0 16px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .scr-cat-btn {
+      padding: 9px 15px; border: none; background: transparent;
+      color: var(--muted); font-size: 12.5px; font-weight: 500;
+      cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+      transition: color .15s, border-color .15s; white-space: nowrap;
+    }
+    .scr-cat-btn.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+    .scr-cat-btn:hover:not(.active) { color: var(--text); }
+    .scr-label-right { margin-left: auto; font-size: 11px; color: var(--muted); padding: 0 4px; align-self: center; }
+    .scr-grid-wrap {
+      padding: 12px 16px 10px; overflow-y: auto;
+      border-bottom: 1px solid var(--border); flex-shrink: 0; max-height: 250px;
+    }
+    .scr-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 7px;
+    }
+    .scr-card {
+      background: var(--tag-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 9px 12px; cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .scr-card:hover  { border-color: var(--accent2); background: #162030; }
+    .scr-card.active { border-color: var(--accent);  background: #1a1c0d; }
+    .scr-card-title { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+    .scr-card-desc  { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
+    .scr-results-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .scr-results-header {
+      display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+      padding: 9px 16px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    #scr-results-title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .scr-results-body { flex: 1; overflow-y: auto; padding: 0; }
+    .scr-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+    .scr-tbl thead th {
+      position: sticky; top: 0; z-index: 1;
+      padding: 8px 12px; background: var(--tag-bg);
+      color: var(--muted); font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    .scr-tbl tbody tr { border-bottom: 1px solid #141f2e; }
+    .scr-tbl tbody tr:last-child { border-bottom: none; }
+    .scr-tbl tbody tr:hover td { background: #162030; }
+    .scr-tbl td { padding: 7px 12px; }
+    .scr-tbl td.r { text-align: right; }
+    .scr-sym {
+      font-weight: 700; font-size: 11.5px; color: var(--accent2);
+      background: #1d4ed820; border-radius: 4px; padding: 1px 6px;
+      display: inline-block; letter-spacing: .02em;
+    }
+    .scr-subj { color: var(--text); font-size: 11.5px; }
+    .scr-co   { color: var(--muted); font-size: 11px; }
   </style>
 </head>
 <body>
@@ -858,6 +918,7 @@
       <button class="tab-btn" id="tab-results" onclick="switchTab('results')">📈 Results</button>
       <button class="tab-btn" id="tab-breakouts" onclick="switchTab('breakouts')">⚡ Breakouts</button>
       <button class="tab-btn" id="tab-watchlist" onclick="switchTab('watchlist')">⭐ Watchlist</button>
+      <button class="tab-btn" id="tab-screener" onclick="switchTab('screener')">🔍 Screener</button>
     </div>
 
     <!-- Chat view -->
@@ -1034,6 +1095,36 @@
           </thead>
           <tbody id="wl-tbody"></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Screener view -->
+    <div id="screener-view" style="display:none; flex:1; flex-direction:column; min-height:0; overflow:hidden;">
+      <!-- Category sub-tabs -->
+      <div class="scr-cats">
+        <button class="scr-cat-btn active" id="scr-cat-financials" onclick="switchScrCat('financials')">📈 Financials</button>
+        <button class="scr-cat-btn" id="scr-cat-orders"    onclick="switchScrCat('orders')">📦 Orders</button>
+        <button class="scr-cat-btn" id="scr-cat-events"    onclick="switchScrCat('events')">📅 Events</button>
+        <button class="scr-cat-btn" id="scr-cat-breakouts" onclick="switchScrCat('breakouts')">⚡ Breakouts</button>
+        <button class="scr-cat-btn" id="scr-cat-sectors"   onclick="switchScrCat('sectors')">🏭 Sectors</button>
+        <span class="scr-label-right">Zero AI calls · instant SQL results</span>
+      </div>
+      <!-- Filter cards -->
+      <div class="scr-grid-wrap">
+        <div class="scr-grid" id="scr-grid"></div>
+      </div>
+      <!-- Results panel -->
+      <div class="scr-results-panel">
+        <div class="scr-results-header" id="scr-results-header" style="display:none;">
+          <span id="scr-results-title"></span>
+          <span id="scr-results-count" class="res-count"></span>
+        </div>
+        <div class="scr-results-body" id="scr-results-body">
+          <div class="cmp-empty">
+            <span class="cmp-icon">🔍</span>
+            Select a filter above — results load instantly from the database.
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1866,7 +1957,7 @@
 
   // ── Tab switching ─────────────────────────────────────────────────────────
   function switchTab(tab) {
-    ['chat','results','breakouts','watchlist'].forEach(t => {
+    ['chat','results','breakouts','watchlist','screener'].forEach(t => {
       document.getElementById(t + '-view').style.display = 'none';
       document.getElementById('tab-' + t).classList.remove('active');
     });
@@ -1876,6 +1967,7 @@
     if (tab === 'results'   && !window._symbolsLoaded)    loadSymbols();
     if (tab === 'breakouts' && !window._breakoutsLoaded)  loadBreakouts();
     if (tab === 'watchlist')                               loadWatchlist();
+    if (tab === 'screener'  && !window._scrInited)        initScreener();
   }
 
   // ── Results tab ───────────────────────────────────────────────────────────
@@ -2266,6 +2358,190 @@
           </table>
         </div>
       </div>`;
+  }
+
+  // ── Screener tab ─────────────────────────────────────────────────────────────
+  const _SCR_FILTERS = [
+    // Financials
+    {id:'fin_pat_growth_20',  cat:'financials', label:'PAT Growth > 20%',         desc:'Quarterly PAT growth above 20%'},
+    {id:'fin_pat_growth_50',  cat:'financials', label:'PAT Growth > 50%',         desc:'Strong profit momentum — growth above 50%'},
+    {id:'fin_pat_growth_100', cat:'financials', label:'PAT Growth > 100%',        desc:'Exceptional profit doublers this quarter'},
+    {id:'fin_rev_growth_15',  cat:'financials', label:'Revenue Growth > 15%',     desc:'Top-line expanding faster than 15%'},
+    {id:'fin_rev_growth_30',  cat:'financials', label:'Revenue Growth > 30%',     desc:'Rapid revenue expansion above 30%'},
+    {id:'fin_ebitda_20',      cat:'financials', label:'EBITDA Margin > 20%',      desc:'High-operating-margin businesses'},
+    {id:'fin_ebitda_30',      cat:'financials', label:'EBITDA Margin > 30%',      desc:'Premium margin businesses above 30%'},
+    {id:'fin_turnaround',     cat:'financials', label:'Turnaround (Loss→Profit)', desc:'Companies returning to profitability'},
+    {id:'fin_revenue_100',    cat:'financials', label:'Revenue > ₹100 Cr',        desc:'Mid-size companies by quarterly revenue'},
+    {id:'fin_revenue_500',    cat:'financials', label:'Revenue > ₹500 Cr',        desc:'Large companies by quarterly revenue'},
+    {id:'fin_recent_7d',      cat:'financials', label:'Results This Week',         desc:'Freshest earnings announcements'},
+    {id:'fin_annual',         cat:'financials', label:'Annual Results (FY)',        desc:'Full-year financial results'},
+    // Orders
+    {id:'ord_defence_100', cat:'orders', label:'Defence > ₹100 Cr',    desc:'Defence sector order wins above Rs.100 Cr'},
+    {id:'ord_defence_500', cat:'orders', label:'Defence > ₹500 Cr',    desc:'Large defence contracts above Rs.500 Cr'},
+    {id:'ord_railway_50',  cat:'orders', label:'Railway > ₹50 Cr',     desc:'Railway / rail sector order wins'},
+    {id:'ord_power_50',    cat:'orders', label:'Power Sector Orders',  desc:'Power, energy & solar orders above Rs.50 Cr'},
+    {id:'ord_mega_1000',   cat:'orders', label:'Mega > ₹1,000 Cr',    desc:'Transformative contracts above Rs.1,000 Cr'},
+    {id:'ord_large_500',   cat:'orders', label:'Large > ₹500 Cr',     desc:'All sectors — large orders above Rs.500 Cr'},
+    {id:'ord_infra_100',   cat:'orders', label:'Infra > ₹100 Cr',     desc:'Roads, highways & infrastructure orders'},
+    {id:'ord_all_7d',      cat:'orders', label:'All Orders This Week', desc:'Every order win in last 7 days'},
+    {id:'ord_govt',        cat:'orders', label:'Govt / PSU Orders',    desc:'Government, ministry & PSU client orders'},
+    {id:'ord_export',      cat:'orders', label:'Export Orders',        desc:'International & overseas order wins'},
+    {id:'ord_water',       cat:'orders', label:'Water / Irrigation',   desc:'Jal Jeevan & irrigation sector orders'},
+    {id:'ord_epc',         cat:'orders', label:'EPC / Construction',   desc:'EPC and construction project orders'},
+    // Events
+    {id:'evt_dividend',      cat:'events', label:'Dividends',          desc:'Companies declaring dividends'},
+    {id:'evt_buyback',       cat:'events', label:'Buybacks',           desc:'Share buyback announcements'},
+    {id:'evt_bonus_split',   cat:'events', label:'Bonus / Split',      desc:'Bonus shares & stock split decisions'},
+    {id:'evt_fundraising',   cat:'events', label:'QIP / Fundraising',  desc:'QIP, preferential & rights issue fundraising'},
+    {id:'evt_acquisition',   cat:'events', label:'Acquisitions',       desc:'M&A, acquisitions & mergers'},
+    {id:'evt_mgmt_change',   cat:'events', label:'Management Changes', desc:'CEO, MD & key leadership changes'},
+    {id:'evt_credit_rating', cat:'events', label:'Credit Ratings',     desc:'Credit rating upgrades & downgrades'},
+    {id:'evt_all_7d',        cat:'events', label:'Events This Week',   desc:'All non-order announcements last 7 days'},
+    {id:'evt_insolvency',    cat:'events', label:'NCLT / Insolvency',  desc:'CIRP, insolvency & NCLT proceedings'},
+    {id:'evt_concall',       cat:'events', label:'Analyst Meets',      desc:'Investor meets & conference calls'},
+    // Breakouts
+    {id:'brk_all_14d',  cat:'breakouts', label:'All Breakouts (14d)',  desc:'All volume breakout signals last 14 days'},
+    {id:'brk_defence',  cat:'breakouts', label:'Defence Breakouts',    desc:'Defence sector stocks with breakout signals'},
+    {id:'brk_pharma',   cat:'breakouts', label:'Pharma Breakouts',     desc:'Pharma sector breakout signals'},
+    {id:'brk_smallcap', cat:'breakouts', label:'Smallcap Breakouts',   desc:'Small cap stocks with breakout signals'},
+    {id:'brk_midcap',   cat:'breakouts', label:'Midcap Breakouts',     desc:'Mid cap stocks with breakout signals'},
+    {id:'brk_it',       cat:'breakouts', label:'IT / Tech Breakouts',  desc:'Software & tech sector breakouts'},
+    {id:'brk_infra',    cat:'breakouts', label:'Infra Breakouts',      desc:'Infrastructure sector breakout signals'},
+    {id:'brk_30d',      cat:'breakouts', label:'Breakouts (30 days)',  desc:'All volume breakout signals last 30 days'},
+    // Sectors
+    {id:'sec_defence',   cat:'sectors', label:'Defence Sector',    desc:'All announcements tagged defence'},
+    {id:'sec_pharma',    cat:'sectors', label:'Pharma Sector',     desc:'All pharma sector announcements'},
+    {id:'sec_it',        cat:'sectors', label:'IT / Tech',         desc:'IT & software sector announcements'},
+    {id:'sec_auto',      cat:'sectors', label:'Auto Sector',       desc:'Automobile sector announcements'},
+    {id:'sec_banking',   cat:'sectors', label:'Banking & Finance', desc:'Banks, NBFCs & financial sector'},
+    {id:'sec_realty',    cat:'sectors', label:'Real Estate',       desc:'Real estate & realty announcements'},
+    {id:'sec_fmcg',      cat:'sectors', label:'FMCG Sector',       desc:'Consumer goods & FMCG announcements'},
+    {id:'sec_chemicals', cat:'sectors', label:'Chemicals Sector',  desc:'Chemicals & specialty chemicals'},
+  ];
+
+  let _scrActiveCat    = 'financials';
+  let _scrActiveFilter = null;
+  window._scrInited    = false;
+
+  function initScreener() {
+    window._scrInited = true;
+    renderScrCards(_scrActiveCat);
+  }
+
+  function switchScrCat(cat) {
+    _scrActiveCat = cat;
+    _scrActiveFilter = null;
+    ['financials','orders','events','breakouts','sectors'].forEach(c => {
+      document.getElementById('scr-cat-' + c).classList.toggle('active', c === cat);
+    });
+    renderScrCards(cat);
+  }
+
+  function renderScrCards(cat) {
+    const filters = _SCR_FILTERS.filter(f => f.cat === cat);
+    const grid    = document.getElementById('scr-grid');
+    grid.innerHTML = filters.map(f => `
+      <div class="scr-card" id="scr-card-${f.id}" onclick="loadScreen('${f.id}','${f.label.replace(/'/g,"\\'")}')">
+        <div class="scr-card-title">${f.label}</div>
+        <div class="scr-card-desc">${f.desc}</div>
+      </div>`
+    ).join('');
+  }
+
+  async function loadScreen(filterId, label) {
+    // Update active card
+    document.querySelectorAll('.scr-card').forEach(el => el.classList.remove('active'));
+    const card = document.getElementById('scr-card-' + filterId);
+    if (card) card.classList.add('active');
+    _scrActiveFilter = filterId;
+
+    const body   = document.getElementById('scr-results-body');
+    const header = document.getElementById('scr-results-header');
+    const title  = document.getElementById('scr-results-title');
+    const count  = document.getElementById('scr-results-count');
+
+    body.innerHTML = '<div class="cmp-empty"><span class="cmp-icon" style="font-size:22px;animation:pulse 1s infinite">⏳</span>Loading…</div>';
+    header.style.display = 'none';
+
+    try {
+      const res  = await fetch(`/api/screen?filter_id=${filterId}`);
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.status); }
+      const data = await res.json();
+
+      title.textContent = data.label;
+      count.textContent = data.count ? `${data.count} results` : 'No results';
+      header.style.display = 'flex';
+      body.innerHTML = renderScrResults(data);
+    } catch(e) {
+      header.style.display = 'none';
+      body.innerHTML = `<div class="cmp-empty"><span class="cmp-icon">⚠️</span>${e.message}</div>`;
+    }
+  }
+
+  function renderScrResults(data) {
+    if (!data.rows || data.rows.length === 0) {
+      return '<div class="cmp-empty"><span class="cmp-icon">📭</span>No records found for this filter.</div>';
+    }
+    const rtype = data.type;
+
+    if (rtype === 'financials') {
+      const rows = data.rows.map(r => `<tr>
+        <td><span class="scr-sym">${r.symbol}</span></td>
+        <td class="scr-co">${r.company}</td>
+        <td class="scr-co">${r.period||'—'}</td>
+        <td class="r">${r.revenue_cr != null ? Number(r.revenue_cr).toLocaleString('en-IN',{maximumFractionDigits:0}) : '<span style="color:var(--muted)">—</span>'}</td>
+        <td class="r">${r.pat_cr != null ? Number(r.pat_cr).toLocaleString('en-IN',{maximumFractionDigits:0}) : '<span style="color:var(--muted)">—</span>'}</td>
+        <td class="r">${fmtGrowth(r.pat_growth_pct)}</td>
+        <td class="r">${fmtGrowth(r.revenue_growth_pct)}</td>
+        <td class="r">${r.ebitda_margin_pct != null ? Number(r.ebitda_margin_pct).toFixed(1)+'%' : '<span style="color:var(--muted)">—</span>'}</td>
+        <td class="scr-co">${r.broadcast_dt||'—'}</td>
+      </tr>`).join('');
+      return `<div style="overflow-x:auto"><table class="scr-tbl"><thead><tr>
+        <th>Symbol</th><th>Company</th><th>Period</th>
+        <th class="r">Revenue Cr</th><th class="r">PAT Cr</th>
+        <th class="r">PAT Growth</th><th class="r">Rev Growth</th>
+        <th class="r">EBITDA%</th><th>Date</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    if (rtype === 'breakouts') {
+      const rows = data.rows.map(r => {
+        const pct = r.per_chg != null ? r.per_chg : null;
+        const pctHtml = pct != null
+          ? `<span class="${pct >= 0 ? 'growth-pos' : 'growth-neg'}">${pct >= 0 ? '▲' : '▼'}${Math.abs(pct).toFixed(2)}%</span>`
+          : '<span style="color:var(--muted)">—</span>';
+        const vol = r.volume != null ? Number(r.volume).toLocaleString('en-IN') : '—';
+        return `<tr>
+          <td><span class="scr-sym">${r.symbol}</span></td>
+          <td class="scr-co">${r.company}</td>
+          <td class="scr-co">${r.signal_date||'—'}</td>
+          <td class="scr-co">${r.sector||'—'}</td>
+          <td class="scr-co">${r.marketcap||'—'}</td>
+          <td class="r">${r.close != null ? Number(r.close).toLocaleString('en-IN',{maximumFractionDigits:2}) : '—'}</td>
+          <td class="r">${pctHtml}</td>
+          <td class="r scr-co">${vol}</td>
+        </tr>`;
+      }).join('');
+      return `<div style="overflow-x:auto"><table class="scr-tbl"><thead><tr>
+        <th>Symbol</th><th>Company</th><th>Date</th><th>Sector</th><th>Market Cap</th>
+        <th class="r">Close</th><th class="r">Change%</th><th class="r">Volume</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    // orders / events / sectors
+    const rows = data.rows.map(r => {
+      const oval = r.order_value_cr ? `₹${Number(r.order_value_cr).toLocaleString('en-IN',{maximumFractionDigits:0})} Cr` : '';
+      return `<tr>
+        <td><span class="scr-sym">${r.symbol}</span></td>
+        <td class="scr-co">${r.company}</td>
+        <td class="scr-subj">${r.subject}</td>
+        <td class="r" style="white-space:nowrap;color:var(--accent);font-weight:600">${oval}</td>
+        <td class="scr-co">${r.broadcast_dt||'—'}</td>
+      </tr>`;
+    }).join('');
+    return `<div style="overflow-x:auto"><table class="scr-tbl"><thead><tr>
+      <th>Symbol</th><th>Company</th><th>Subject</th><th class="r">Value</th><th>Date</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 </script>
 

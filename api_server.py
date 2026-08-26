@@ -774,6 +774,163 @@ async def remove_from_watchlist(symbol: str, x_api_key: str | None = Header(defa
     return {"removed": sym}
 
 
+@app.get("/api/screen")
+async def screen(filter_id: str):
+    """Run a pre-defined screener query — zero LLM calls, pure SQL."""
+    _FIN  = ("symbol, company, period, revenue_cr, pat_cr, "
+             "pat_growth_pct, revenue_growth_pct, ebitda_margin_pct, broadcast_dt")
+    _FIN_EX = ("period_type NOT IN ('order_win','acquisition','restructuring',"
+               "'credit_rating','cirp','fundraising','buyback','open_offer')")
+    _ANN  = "symbol, company, subject, order_value_cr, sector_tags, broadcast_dt"
+    _BRK  = ("vb.symbol, vb.company, vb.signal_date, vb.marketcap, "
+             "COALESCE(vb.sector, ss.sector) as sector, vb.close, vb.per_chg, vb.volume")
+    _BFRM = "volume_breakouts vb LEFT JOIN stock_sectors ss ON ss.symbol = vb.symbol"
+
+    FILTERS: dict[str, dict] = {
+        # ── FINANCIALS ─────────────────────────────────────────────────────────
+        "fin_pat_growth_20":  {"label": "PAT Growth > 20%",         "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND pat_growth_pct > 20 ORDER BY pat_growth_pct DESC LIMIT 100"},
+        "fin_pat_growth_50":  {"label": "PAT Growth > 50%",         "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND pat_growth_pct > 50 ORDER BY pat_growth_pct DESC LIMIT 100"},
+        "fin_pat_growth_100": {"label": "PAT Growth > 100%",        "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND pat_growth_pct > 100 ORDER BY pat_growth_pct DESC LIMIT 100"},
+        "fin_rev_growth_15":  {"label": "Revenue Growth > 15%",     "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND revenue_growth_pct > 15 ORDER BY revenue_growth_pct DESC LIMIT 100"},
+        "fin_rev_growth_30":  {"label": "Revenue Growth > 30%",     "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND revenue_growth_pct > 30 ORDER BY revenue_growth_pct DESC LIMIT 100"},
+        "fin_ebitda_20":      {"label": "EBITDA Margin > 20%",      "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND ebitda_margin_pct > 20 ORDER BY ebitda_margin_pct DESC LIMIT 100"},
+        "fin_ebitda_30":      {"label": "EBITDA Margin > 30%",      "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND ebitda_margin_pct > 30 ORDER BY ebitda_margin_pct DESC LIMIT 100"},
+        "fin_turnaround":     {"label": "Turnaround (Loss→Profit)", "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND pat_growth_pct > 200 AND pat_cr > 0 ORDER BY broadcast_dt DESC LIMIT 100"},
+        "fin_revenue_100":    {"label": "Revenue > ₹100 Cr",        "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND revenue_cr > 100 ORDER BY revenue_cr DESC LIMIT 100"},
+        "fin_revenue_500":    {"label": "Revenue > ₹500 Cr",        "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND revenue_cr > 500 ORDER BY revenue_cr DESC LIMIT 100"},
+        "fin_recent_7d":      {"label": "Results This Week",         "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE {_FIN_EX} AND DATE(broadcast_dt) >= DATE('now','-7 days') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "fin_annual":         {"label": "Annual Results (FY)",       "type": "financials",
+            "sql": f"SELECT {_FIN} FROM financial_results WHERE period_type='annual' ORDER BY broadcast_dt DESC LIMIT 100"},
+        # ── ORDER WINS ─────────────────────────────────────────────────────────
+        "ord_defence_100": {"label": "Defence Orders > ₹100 Cr", "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 100 AND (LOWER(subject) LIKE '%defence%' OR LOWER(subject) LIKE '%military%' OR LOWER(subject) LIKE '%army%' OR LOWER(subject) LIKE '%navy%' OR LOWER(subject) LIKE '%drdo%' OR LOWER(sector_tags) LIKE '%defence%') ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_defence_500": {"label": "Defence Orders > ₹500 Cr", "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 500 AND (LOWER(subject) LIKE '%defence%' OR LOWER(subject) LIKE '%military%' OR LOWER(subject) LIKE '%army%' OR LOWER(sector_tags) LIKE '%defence%') ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_railway_50":  {"label": "Railway Orders > ₹50 Cr",  "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 50 AND (LOWER(subject) LIKE '%railway%' OR LOWER(subject) LIKE '%rail%' OR LOWER(sector_tags) LIKE '%railway%') ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_power_50":    {"label": "Power Sector Orders > ₹50 Cr", "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 50 AND (LOWER(subject) LIKE '%power%' OR LOWER(subject) LIKE '%energy%' OR LOWER(subject) LIKE '%solar%' OR LOWER(subject) LIKE '%transmission%' OR LOWER(sector_tags) LIKE '%power%') ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_mega_1000":   {"label": "Mega Orders > ₹1,000 Cr",  "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 1000 ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_large_500":   {"label": "Large Orders > ₹500 Cr",   "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 500 ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_infra_100":   {"label": "Infra Orders > ₹100 Cr",   "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 100 AND (LOWER(subject) LIKE '%infrastructure%' OR LOWER(subject) LIKE '%infra%' OR LOWER(subject) LIKE '%road%' OR LOWER(subject) LIKE '%highway%' OR LOWER(sector_tags) LIKE '%infra%') ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_all_7d":      {"label": "All Orders This Week",      "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 0 AND DATE(broadcast_dt) >= DATE('now','-7 days') ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_govt":        {"label": "Govt / PSU Orders",         "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 0 AND (LOWER(subject) LIKE '%government%' OR LOWER(subject) LIKE '%govt%' OR LOWER(subject) LIKE '%ministry%' OR LOWER(subject) LIKE '%municipal%' OR LOWER(subject) LIKE '%nhai%' OR LOWER(subject) LIKE '%ntpc%') ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_export":      {"label": "Export Orders",             "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 0 AND (LOWER(subject) LIKE '%export%' OR LOWER(subject) LIKE '%international%' OR LOWER(subject) LIKE '%overseas%') ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_water":       {"label": "Water / Irrigation Orders", "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 0 AND (LOWER(subject) LIKE '%water%' OR LOWER(subject) LIKE '%irrigation%' OR LOWER(subject) LIKE '%sewage%' OR LOWER(subject) LIKE '%jal%') ORDER BY order_value_cr DESC LIMIT 100"},
+        "ord_epc":         {"label": "EPC / Construction Orders", "type": "orders",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE order_value_cr > 0 AND (LOWER(subject) LIKE '%epc%' OR LOWER(subject) LIKE '%construction%' OR LOWER(subject) LIKE '%turnkey%') ORDER BY order_value_cr DESC LIMIT 100"},
+        # ── CORPORATE EVENTS ───────────────────────────────────────────────────
+        "evt_dividend":      {"label": "Dividend Announcements",   "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE LOWER(subject) LIKE '%dividend%' ORDER BY broadcast_dt DESC LIMIT 100"},
+        "evt_buyback":       {"label": "Buyback Announcements",    "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(subject) LIKE '%buyback%' OR LOWER(subject) LIKE '%buy-back%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "evt_bonus_split":   {"label": "Bonus / Stock Split",      "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(subject) LIKE '%bonus%' OR LOWER(subject) LIKE '%stock split%') AND LOWER(subject) NOT LIKE '%revenue%' ORDER BY broadcast_dt DESC LIMIT 100"},
+        "evt_fundraising":   {"label": "QIP / Fundraising",        "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(subject) LIKE '%qip%' OR LOWER(subject) LIKE '%preferential%' OR LOWER(subject) LIKE '%rights issue%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "evt_acquisition":   {"label": "Acquisitions / Mergers",   "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(subject) LIKE '%acquisition%' OR LOWER(subject) LIKE '%merger%' OR LOWER(subject) LIKE '%takeover%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "evt_mgmt_change":   {"label": "Management Changes",       "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(subject) LIKE '%appointment%' OR LOWER(subject) LIKE '%resignation%' OR LOWER(subject) LIKE '%ceo%' OR LOWER(subject) LIKE '%managing director%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "evt_credit_rating": {"label": "Credit Rating Changes",    "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(subject) LIKE '%credit rating%' OR LOWER(subject) LIKE '%rating upgrade%' OR LOWER(subject) LIKE '%rating downgrade%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "evt_all_7d":        {"label": "All Events This Week",     "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE DATE(broadcast_dt) >= DATE('now','-7 days') AND (order_value_cr IS NULL OR order_value_cr = 0) ORDER BY broadcast_dt DESC LIMIT 100"},
+        "evt_insolvency":    {"label": "NCLT / Insolvency",        "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(subject) LIKE '%nclt%' OR LOWER(subject) LIKE '%insolvency%' OR LOWER(subject) LIKE '%cirp%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "evt_concall":       {"label": "Investor / Analyst Meets", "type": "events",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(subject) LIKE '%analyst%' OR LOWER(subject) LIKE '%investor meet%' OR LOWER(subject) LIKE '%concall%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        # ── BREAKOUTS ──────────────────────────────────────────────────────────
+        "brk_all_14d":  {"label": "All Breakouts (14 days)",    "type": "breakouts",
+            "sql": f"SELECT {_BRK} FROM {_BFRM} WHERE vb.signal_date >= DATE('now','-14 days') ORDER BY vb.signal_date DESC LIMIT 100"},
+        "brk_defence":  {"label": "Defence Breakouts",          "type": "breakouts",
+            "sql": f"SELECT {_BRK} FROM {_BFRM} WHERE (LOWER(COALESCE(vb.sector,'')) LIKE '%defence%' OR LOWER(COALESCE(ss.sector,'')) LIKE '%defence%') AND vb.signal_date >= DATE('now','-30 days') ORDER BY vb.signal_date DESC LIMIT 100"},
+        "brk_pharma":   {"label": "Pharma Breakouts",           "type": "breakouts",
+            "sql": f"SELECT {_BRK} FROM {_BFRM} WHERE (LOWER(COALESCE(vb.sector,'')) LIKE '%pharma%' OR LOWER(COALESCE(ss.sector,'')) LIKE '%pharma%') AND vb.signal_date >= DATE('now','-30 days') ORDER BY vb.signal_date DESC LIMIT 100"},
+        "brk_smallcap": {"label": "Smallcap Breakouts",         "type": "breakouts",
+            "sql": f"SELECT {_BRK} FROM {_BFRM} WHERE LOWER(vb.marketcap) = 'small cap' AND vb.signal_date >= DATE('now','-14 days') ORDER BY vb.signal_date DESC LIMIT 100"},
+        "brk_midcap":   {"label": "Midcap Breakouts",           "type": "breakouts",
+            "sql": f"SELECT {_BRK} FROM {_BFRM} WHERE LOWER(vb.marketcap) = 'mid cap' AND vb.signal_date >= DATE('now','-14 days') ORDER BY vb.signal_date DESC LIMIT 100"},
+        "brk_it":       {"label": "IT / Tech Breakouts",        "type": "breakouts",
+            "sql": f"SELECT {_BRK} FROM {_BFRM} WHERE (LOWER(COALESCE(vb.sector,'')) LIKE '%software%' OR LOWER(COALESCE(vb.sector,'')) LIKE '%tech%' OR LOWER(COALESCE(ss.sector,'')) LIKE '%informat%') AND vb.signal_date >= DATE('now','-30 days') ORDER BY vb.signal_date DESC LIMIT 100"},
+        "brk_infra":    {"label": "Infrastructure Breakouts",   "type": "breakouts",
+            "sql": f"SELECT {_BRK} FROM {_BFRM} WHERE (LOWER(COALESCE(vb.sector,'')) LIKE '%infra%' OR LOWER(COALESCE(ss.sector,'')) LIKE '%infra%') AND vb.signal_date >= DATE('now','-30 days') ORDER BY vb.signal_date DESC LIMIT 100"},
+        "brk_30d":      {"label": "Breakouts (30 days)",        "type": "breakouts",
+            "sql": f"SELECT {_BRK} FROM {_BFRM} WHERE vb.signal_date >= DATE('now','-30 days') ORDER BY vb.signal_date DESC LIMIT 100"},
+        # ── SECTORS ────────────────────────────────────────────────────────────
+        "sec_defence":   {"label": "Defence Sector",    "type": "sectors",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE LOWER(sector_tags) LIKE '%defence%' ORDER BY broadcast_dt DESC LIMIT 100"},
+        "sec_pharma":    {"label": "Pharma Sector",     "type": "sectors",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE LOWER(sector_tags) LIKE '%pharma%' ORDER BY broadcast_dt DESC LIMIT 100"},
+        "sec_it":        {"label": "IT / Tech Sector",  "type": "sectors",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(sector_tags) LIKE '%informat%' OR LOWER(sector_tags) LIKE '%software%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "sec_auto":      {"label": "Auto Sector",       "type": "sectors",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE LOWER(sector_tags) LIKE '%auto%' ORDER BY broadcast_dt DESC LIMIT 100"},
+        "sec_banking":   {"label": "Banking & Finance",  "type": "sectors",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(sector_tags) LIKE '%bank%' OR LOWER(sector_tags) LIKE '%financ%' OR LOWER(sector_tags) LIKE '%nbfc%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "sec_realty":    {"label": "Real Estate",       "type": "sectors",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(sector_tags) LIKE '%real%' OR LOWER(sector_tags) LIKE '%realt%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "sec_fmcg":      {"label": "FMCG Sector",       "type": "sectors",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE (LOWER(sector_tags) LIKE '%fmcg%' OR LOWER(sector_tags) LIKE '%consumer%') ORDER BY broadcast_dt DESC LIMIT 100"},
+        "sec_chemicals": {"label": "Chemicals Sector",  "type": "sectors",
+            "sql": f"SELECT {_ANN} FROM announcements WHERE LOWER(sector_tags) LIKE '%chemical%' ORDER BY broadcast_dt DESC LIMIT 100"},
+    }
+
+    f = FILTERS.get(filter_id)
+    if not f:
+        raise HTTPException(status_code=404, detail=f"Unknown filter: {filter_id}")
+
+    conn = _sqlite3.connect(str(cfg.db_path))
+    try:
+        rows = conn.execute(f["sql"]).fetchall()
+    except Exception as exc:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(exc))
+    conn.close()
+
+    rtype = f["type"]
+    if rtype == "financials":
+        return {
+            "type": rtype, "label": f["label"], "count": len(rows),
+            "rows": [{"symbol": r[0], "company": r[1] or "", "period": r[2] or "",
+                      "revenue_cr": r[3], "pat_cr": r[4], "pat_growth_pct": r[5],
+                      "revenue_growth_pct": r[6], "ebitda_margin_pct": r[7],
+                      "broadcast_dt": (r[8] or "")[:10]} for r in rows],
+        }
+    if rtype in ("orders", "events", "sectors"):
+        return {
+            "type": rtype, "label": f["label"], "count": len(rows),
+            "rows": [{"symbol": r[0], "company": r[1] or "", "subject": r[2] or "",
+                      "order_value_cr": r[3], "sector_tags": r[4] or "",
+                      "broadcast_dt": (r[5] or "")[:10]} for r in rows],
+        }
+    # breakouts
+    return {
+        "type": rtype, "label": f["label"], "count": len(rows),
+        "rows": [{"symbol": r[0], "company": r[1] or "", "signal_date": r[2] or "",
+                  "marketcap": r[3] or "", "sector": r[4] or "",
+                  "close": r[5], "per_chg": r[6], "volume": r[7]} for r in rows],
+    }
+
+
 @app.get("/api/watchlist/alerts")
 async def watchlist_alerts():
     """Return today's breakout signals for watchlisted symbols."""

@@ -566,6 +566,28 @@ _VAGUE_RE = __import__("re").compile(
     __import__("re").IGNORECASE,
 )
 
+# "Scan everything and rank/analyse" — too broad for our retrieval model
+_HEAVY_RE = __import__("re").compile(
+    r'(scan\s+all|scan\s+every|analyse\s+all|analyze\s+all'
+    r'|rank\s+(the\s+)?(top\s+\d+|all)'
+    r'|identify\s+and\s+rank'
+    r'|list\s+all\s+.{0,30}(catalyst|opportunit|event|announc)'
+    r'|give\s+me\s+(all|every|the\s+top\s+\d+)\s+.{0,30}(catalyst|opportunit|stock|announc)'
+    r'|comprehensive\s+(scan|analysis|list|report)'
+    r'|market.moving\s+catalyst)',
+    __import__("re").IGNORECASE,
+)
+
+_HEAVY_REPLY = (
+    "This query needs to process too many results at once, which can time out on our server.\n\n"
+    "**Try a more focused question instead:**\n"
+    "📦 \"Defence order wins above Rs.100 Cr this week\"\n"
+    "📈 \"Companies with PAT growth above 30% this quarter\"\n"
+    "⚡ \"Pharma breakout stocks in last 14 days\"\n\n"
+    "Or use the **🔍 Screener tab** — it runs instant pre-built scans (no AI, no timeouts):\n"
+    "→ *Results This Week*, *Mega Orders > ₹1,000 Cr*, *Defence Breakouts*, and 47 more filters."
+)
+
 # Greetings, social pleasantries, and noise — catch before any DB/LLM call
 _OFFTOPIC_RE = __import__("re").compile(
     r'^\s*('
@@ -641,6 +663,13 @@ async def chat(req: ChatRequest):
             yield f"data: {json.dumps({'type':'token','text':_VAGUE_REPLY})}\n\n"
             yield f"data: {json.dumps({'type':'done'})}\n\n"
         return StreamingResponse(_vague(), media_type="text/event-stream")
+
+    if _HEAVY_RE.search(req.message.strip()):
+        async def _heavy():
+            yield f"data: {json.dumps({'type':'meta','intent':'all','count':0,'sources':[]})}\n\n"
+            yield f"data: {json.dumps({'type':'token','text':_HEAVY_REPLY})}\n\n"
+            yield f"data: {json.dumps({'type':'done'})}\n\n"
+        return StreamingResponse(_heavy(), media_type="text/event-stream")
 
     if _OFFTOPIC_RE.match(req.message.strip()):
         async def _offtopic():

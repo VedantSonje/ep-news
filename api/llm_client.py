@@ -1,19 +1,24 @@
 """
 Unified LLM client — routes to Groq (cloud) or Ollama (local).
 
-Priority: GROQ_API_KEY set → Groq cloud (Gemini as rate-limit fallback);
-          otherwise → Ollama local.
+Priority (on rate limit): Groq → Gemini → OpenRouter → raise RateLimitError
 """
 from __future__ import annotations
 
 import os
 from typing import Generator
 
-_GROQ_API_KEY   = os.getenv("GROQ_API_KEY",   "")
-_GROQ_MODEL     = os.getenv("GROQ_MODEL",      "groq/compound-mini")
-_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY",  "")
-_GEMINI_MODEL   = os.getenv("GEMINI_MODEL",    "gemini-3.6-flash")
-_OLLAMA_MODEL   = os.getenv("OLLAMA_MODEL",    "llama3.1:latest")
+_GROQ_API_KEY        = os.getenv("GROQ_API_KEY",        "")
+_GROQ_MODEL          = os.getenv("GROQ_MODEL",          "groq/compound-mini")
+_GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY",      "")
+_GEMINI_MODEL        = os.getenv("GEMINI_MODEL",        "gemini-3.6-flash")
+_OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY",  "")
+_OPENROUTER_MODEL    = os.getenv("OPENROUTER_MODEL",    "meta-llama/llama-3.1-8b-instruct:free")
+_OLLAMA_MODEL        = os.getenv("OLLAMA_MODEL",        "llama3.1:latest")
+
+
+class RateLimitError(RuntimeError):
+    """All cloud providers returned 429 — surface to the caller for UX handling."""
 
 ACTIVE_PROVIDER = "groq" if _GROQ_API_KEY else "ollama"
 ACTIVE_MODEL    = _GROQ_MODEL if _GROQ_API_KEY else _OLLAMA_MODEL
@@ -110,11 +115,19 @@ def _groq_complete(messages, temperature, max_tokens) -> str:
                 time.sleep(_rate_limit_wait(last_err))
             else:
                 break
-    # Groq exhausted — fall back to Gemini if available
-    if _GEMINI_API_KEY and ("rate_limit" in last_err.lower() or "429" in last_err):
+    is_rl = "rate_limit" in last_err.lower() or "429" in last_err
+    # Groq exhausted — fall back to Gemini
+    if is_rl and _GEMINI_API_KEY:
         result = _gemini_complete(messages, temperature, max_tokens)
         if result:
             return result
+    # Gemini unavailable/failed — fall back to OpenRouter
+    if is_rl and _OPENROUTER_API_KEY:
+        result = _openrouter_complete(messages, temperature, max_tokens)
+        if result:
+            return result
+    if is_rl:
+        raise RateLimitError(last_err)
     raise RuntimeError(last_err)
 
 
@@ -144,10 +157,17 @@ def _groq_stream(messages, temperature, max_tokens) -> Generator[str, None, None
             if token:
                 yield token
         return
-    # Groq exhausted — fall back to Gemini if available
-    if _GEMINI_API_KEY and ("rate_limit" in last_err.lower() or "429" in last_err):
+    is_rl = "rate_limit" in last_err.lower() or "429" in last_err
+    # Groq exhausted — fall back to Gemini
+    if is_rl and _GEMINI_API_KEY:
         yield from _gemini_stream(messages, temperature, max_tokens)
         return
+    # Gemini unavailable/failed — fall back to OpenRouter
+    if is_rl and _OPENROUTER_API_KEY:
+        yield from _openrouter_stream(messages, temperature, max_tokens)
+        return
+    if is_rl:
+        raise RateLimitError(last_err)
     raise RuntimeError(last_err)
 
 
@@ -187,6 +207,52 @@ def _gemini_stream(messages: list[dict], temperature: float, max_tokens: int) ->
             text = chunk.text or ""
             if text:
                 yield text
+    except Exception:
+        return
+
+
+# ── OpenRouter fallback (used when Groq + Gemini are rate-limited) ───────────
+
+def _openrouter_complete(messages: list[dict], temperature: float, max_tokens: int) -> str:
+    if not _OPENROUTER_API_KEY:
+        return ""
+    try:
+        from openai import OpenAI
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=_OPENROUTER_API_KEY,
+        )
+        resp = client.chat.completions.create(
+            model=_OPENROUTER_MODEL,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return resp.choices[0].message.content or ""
+    except Exception:
+        return ""
+
+
+def _openrouter_stream(messages: list[dict], temperature: float, max_tokens: int) -> Generator[str, None, None]:
+    if not _OPENROUTER_API_KEY:
+        return
+    try:
+        from openai import OpenAI
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=_OPENROUTER_API_KEY,
+        )
+        stream = client.chat.completions.create(
+            model=_OPENROUTER_MODEL,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        for chunk in stream:
+            token = chunk.choices[0].delta.content or ""
+            if token:
+                yield token
     except Exception:
         return
 

@@ -865,6 +865,21 @@
     .scr-tbl tbody tr:hover td { background: #162030; }
     .scr-tbl td { padding: 7px 12px; }
     .scr-tbl td.r { text-align: right; }
+    /* ── Rate-limit UX ── */
+    .rl-banner {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      background: #1c1600; border: 1px solid #7a5700; border-radius: 8px;
+      padding: 12px 16px; margin: 4px 0; font-size: 13px;
+    }
+    .rl-banner span { flex: 1; color: #f0c060; line-height: 1.5; }
+    .rl-countdown { font-weight: 700; font-size: 15px; color: var(--accent); }
+    .rl-retry-btn {
+      background: var(--accent); border: none; border-radius: 6px;
+      padding: 6px 16px; color: #000; font-size: 12.5px; font-weight: 700;
+      cursor: pointer; white-space: nowrap; transition: opacity .15s;
+    }
+    .rl-retry-btn:hover  { opacity: .85; }
+    .rl-retry-btn:disabled { opacity: .4; cursor: not-allowed; }
     .scr-sym {
       font-weight: 700; font-size: 11.5px; color: var(--accent2);
       background: #1d4ed820; border-radius: 4px; padding: 1px 6px;
@@ -1471,6 +1486,9 @@
             }
             appendToken(bubble, ev.text);
             fullAnswer += ev.text;
+          } else if (ev.type === 'rate_limit') {
+            markWebDone(bubble);
+            _showRateLimit(bubble, ev.seconds || 60, msg);
           } else if (ev.type === 'done') {
             markWebDone(bubble);
             break;
@@ -1492,6 +1510,43 @@
       document.getElementById('send-btn').disabled = false;
       input.focus();
     }
+  }
+
+  function _showRateLimit(bubble, seconds, originalMsg) {
+    let remaining = seconds;
+    const bannerId = 'rl-' + Date.now();
+    bubble.innerHTML = `<div class="rl-banner" id="${bannerId}">
+      <span>⏳ <strong>API rate limit reached</strong> — all providers are busy.<br>
+      Auto-retrying in <span class="rl-countdown" id="${bannerId}-cd">${remaining}s</span></span>
+      <button class="rl-retry-btn" id="${bannerId}-btn" disabled>Retry</button>
+    </div>`;
+    const interval = setInterval(() => {
+      remaining--;
+      const cdEl  = document.getElementById(bannerId + '-cd');
+      const btnEl = document.getElementById(bannerId + '-btn');
+      if (!cdEl) { clearInterval(interval); return; }
+      cdEl.textContent = remaining + 's';
+      if (remaining <= 0) {
+        clearInterval(interval);
+        cdEl.textContent = '0s';
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.textContent = '↩ Retry now';
+        }
+        // Auto-retry
+        retryMessage(originalMsg);
+      }
+    }, 1000);
+    // Also wire up manual retry button (fires before countdown)
+    const btn = document.getElementById(bannerId + '-btn');
+    if (btn) btn.onclick = () => { clearInterval(interval); retryMessage(originalMsg); };
+  }
+
+  function retryMessage(msg) {
+    const input = document.getElementById('msg-input');
+    if (loading) return;
+    input.value = msg;
+    sendMessage();
   }
 
   function clearChat() {

@@ -30,6 +30,9 @@ from pathlib import Path
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 
+import time as _time
+from typing import Any
+
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -37,6 +40,20 @@ from pydantic import BaseModel
 
 from config import AppConfig
 from api.chat_handler import ChatHandler
+from api.llm_client import RateLimitError, _rate_limit_wait
+
+# ── Simple TTL in-memory cache ────────────────────────────────────────────────
+_cache: dict[str, tuple[float, Any]] = {}
+
+def _c_get(key: str) -> Any | None:
+    entry = _cache.get(key)
+    if entry and entry[0] > _time.time():
+        return entry[1]
+    _cache.pop(key, None)
+    return None
+
+def _c_set(key: str, value: Any, ttl: int = 300) -> None:
+    _cache[key] = (_time.time() + ttl, value)
 
 import os as _os
 _USE_AGENT   = _os.getenv("USE_AGENT",   "0").lower() in ("1", "true", "yes")
@@ -277,6 +294,10 @@ async def suggestions():
 @app.get("/api/results")
 async def results(days: int = 30, sort: str = "date"):
     """Recent quarterly earnings — used by the Results tab."""
+    ck = f"results:{days}:{sort}"
+    hit = _c_get(ck)
+    if hit is not None:
+        return hit
     conn = _sqlite3.connect(str(cfg.db_path))
     order_col = {
         "revenue": "COALESCE(revenue_cr, -1e9) DESC",
@@ -297,12 +318,14 @@ async def results(days: int = 30, sort: str = "date"):
         LIMIT 300
     """).fetchall()
     conn.close()
-    return [
+    data = [
         {"symbol": r[0], "company": r[1] or "", "period": r[2] or "",
          "revenue_cr": r[3], "pat_cr": r[4], "pat_growth_pct": r[5],
          "broadcast_dt": (r[6] or "")[:10]}
         for r in rows
     ]
+    _c_set(ck, data, ttl=300)
+    return data
 
 
 @app.get("/api/compare/symbols")
@@ -348,6 +371,10 @@ async def compare(symbol: str):
 @app.get("/api/breakouts")
 async def breakouts(days: int = 14, sector: str = "", marketcap: str = ""):
     """Volume breakout signals enriched with nearest DB reason (earnings / order / announcement)."""
+    ck = f"breakouts:{days}:{sector}:{marketcap}"
+    hit = _c_get(ck)
+    if hit is not None:
+        return hit
     conn = _sqlite3.connect(str(cfg.db_path))
 
     where, params = [], []
@@ -447,6 +474,7 @@ async def breakouts(days: int = 14, sector: str = "", marketcap: str = ""):
         })
 
     conn.close()
+    _c_set(ck, enriched, ttl=300)
     return enriched
 
 
@@ -613,43 +641,45 @@ async def chat(req: ChatRequest):
         yield f"data: {json.dumps(meta)}\n\n"
 
         # Stage 2: generate response
-        if _WEB_SEARCH:
-            # Dual-agent: DB results + live web search combined
-            from api.ep_agent import stream_dual_agent
-            for token in stream_dual_agent(
-                message     = msg,
-                results     = results,
-                intent      = intent,
-                history     = req.history,
-                handler     = handler,
-                min_cr      = min_cr,
-                company_sym = company_sym,
-            ):
-                yield f"data: {json.dumps({'type':'token','text':token})}\n\n"
+        try:
+            if _WEB_SEARCH:
+                from api.ep_agent import stream_dual_agent
+                for token in stream_dual_agent(
+                    message     = msg,
+                    results     = results,
+                    intent      = intent,
+                    history     = req.history,
+                    handler     = handler,
+                    min_cr      = min_cr,
+                    company_sym = company_sym,
+                ):
+                    yield f"data: {json.dumps({'type':'token','text':token})}\n\n"
 
-        elif _USE_AGENT:
-            # PydanticAI text agent (no web search)
-            from api.ep_agent import stream_with_agent
-            for token in stream_with_agent(
-                message = msg,
-                results = results,
-                intent  = intent,
-                history = req.history,
-                handler = handler,
-                min_cr  = min_cr,
-            ):
-                yield f"data: {json.dumps({'type':'token','text':token})}\n\n"
+            elif _USE_AGENT:
+                from api.ep_agent import stream_with_agent
+                for token in stream_with_agent(
+                    message = msg,
+                    results = results,
+                    intent  = intent,
+                    history = req.history,
+                    handler = handler,
+                    min_cr  = min_cr,
+                ):
+                    yield f"data: {json.dumps({'type':'token','text':token})}\n\n"
 
-        else:
-            # Default: raw Ollama streaming (original path)
-            for token in handler.stream_response(
-                message = msg,
-                results = results,
-                intent  = intent,
-                history = req.history,
-                min_cr  = min_cr,
-            ):
-                yield f"data: {json.dumps({'type':'token','text':token})}\n\n"
+            else:
+                for token in handler.stream_response(
+                    message = msg,
+                    results = results,
+                    intent  = intent,
+                    history = req.history,
+                    min_cr  = min_cr,
+                ):
+                    yield f"data: {json.dumps({'type':'token','text':token})}\n\n"
+
+        except RateLimitError as exc:
+            wait = max(int(_rate_limit_wait(str(exc)) + 1), 10)
+            yield f"data: {json.dumps({'type':'rate_limit','seconds':wait})}\n\n"
 
         yield f"data: {json.dumps({'type':'done'})}\n\n"
 
@@ -898,6 +928,11 @@ async def screen(filter_id: str):
     if not f:
         raise HTTPException(status_code=404, detail=f"Unknown filter: {filter_id}")
 
+    ck = f"screen:{filter_id}"
+    hit = _c_get(ck)
+    if hit is not None:
+        return hit
+
     conn = _sqlite3.connect(str(cfg.db_path))
     try:
         rows = conn.execute(f["sql"]).fetchall()
@@ -908,27 +943,30 @@ async def screen(filter_id: str):
 
     rtype = f["type"]
     if rtype == "financials":
-        return {
+        data = {
             "type": rtype, "label": f["label"], "count": len(rows),
             "rows": [{"symbol": r[0], "company": r[1] or "", "period": r[2] or "",
                       "revenue_cr": r[3], "pat_cr": r[4], "pat_growth_pct": r[5],
                       "revenue_growth_pct": r[6], "ebitda_margin_pct": r[7],
                       "broadcast_dt": (r[8] or "")[:10]} for r in rows],
         }
-    if rtype in ("orders", "events", "sectors"):
-        return {
+    elif rtype in ("orders", "events", "sectors"):
+        data = {
             "type": rtype, "label": f["label"], "count": len(rows),
             "rows": [{"symbol": r[0], "company": r[1] or "", "subject": r[2] or "",
                       "order_value_cr": r[3], "sector_tags": r[4] or "",
                       "broadcast_dt": (r[5] or "")[:10]} for r in rows],
         }
-    # breakouts
-    return {
-        "type": rtype, "label": f["label"], "count": len(rows),
-        "rows": [{"symbol": r[0], "company": r[1] or "", "signal_date": r[2] or "",
-                  "marketcap": r[3] or "", "sector": r[4] or "",
-                  "close": r[5], "per_chg": r[6], "volume": r[7]} for r in rows],
-    }
+    else:
+        # breakouts
+        data = {
+            "type": rtype, "label": f["label"], "count": len(rows),
+            "rows": [{"symbol": r[0], "company": r[1] or "", "signal_date": r[2] or "",
+                      "marketcap": r[3] or "", "sector": r[4] or "",
+                      "close": r[5], "per_chg": r[6], "volume": r[7]} for r in rows],
+        }
+    _c_set(ck, data, ttl=600)   # screener results: 10 min cache
+    return data
 
 
 @app.get("/api/watchlist/alerts")

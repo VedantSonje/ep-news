@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Generator
 
-from api.llm_client import llm_stream
+from api.llm_client import llm_stream, RateLimitError
 
 if TYPE_CHECKING:
     from api.chat_handler import ChatHandler
@@ -151,6 +151,8 @@ def stream_dual_agent(
     ]
     try:
         yield from llm_stream(messages)
+    except RateLimitError:
+        raise   # let api_server handle with proper UX
     except Exception as exc:
         yield f"\n\n⚠️ LLM error: {exc}\n"
         yield "\nFalling back to direct context:\n\n"

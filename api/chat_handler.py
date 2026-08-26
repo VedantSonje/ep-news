@@ -37,7 +37,7 @@ if _os.getenv("LANGSMITH_API_KEY"):
 
 
 from api.retrieval_graph import build_retrieval_graph, RetrievalState
-from api.llm_client import llm_complete, llm_stream, ACTIVE_PROVIDER, ACTIVE_MODEL
+from api.llm_client import llm_complete, llm_stream, ACTIVE_PROVIDER, ACTIVE_MODEL, RateLimitError
 
 _OLLAMA_MODEL = ACTIVE_MODEL   # kept for LangSmith metadata compat
 
@@ -1392,6 +1392,8 @@ class ChatHandler:
                 if len(full_response) > _RESPONSE_CHAR_LIMIT:
                     yield "\n\n*(response truncated — ask a more specific question)*"
                     return
+        except RateLimitError:
+            raise   # let api_server handle with proper UX
         except Exception as e:
             yield f"\n\n⚠️ LLM error ({ACTIVE_PROVIDER}): {e}\n"
             yield "\nFalling back to direct results:\n\n"

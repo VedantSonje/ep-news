@@ -566,6 +566,33 @@ _VAGUE_RE = __import__("re").compile(
     __import__("re").IGNORECASE,
 )
 
+# Greetings, social pleasantries, and noise — catch before any DB/LLM call
+_OFFTOPIC_RE = __import__("re").compile(
+    r'^\s*('
+    # greetings
+    r'hi+|hello+|hey+|heyy+|hii+|helo|hola|howdy|namaste|namaskar|sup|yo\b'
+    # how-are-you variants
+    r'|how\s+are\s+(you|r\s+u)|what\'?s?\s+up|wh?atsup|wassup|wazz?up'
+    # thanks / bye
+    r'|thank(s|\s+you)?|thx|ty\b|bye+|goodbye|cya|see\s+ya'
+    # random / test
+    r'|test(ing)?|check(ing)?|hello\s+world|ping|ok+|okay|k\b|lol|haha|lmao'
+    # pure noise: no letters or only 1-2 real chars
+    r'|[^a-zA-Z]*|[a-zA-Z]{1,2}'
+    r')\s*[?!.,]*\s*$',
+    __import__("re").IGNORECASE,
+)
+
+_OFFTOPIC_REPLY = (
+    "👋 Hi! I'm **EP News AI** — I search BSE/NSE filings for equity research.\n\n"
+    "I can help you with:\n"
+    "📦 **Order wins** — e.g. \"Defence order wins above Rs.100 Cr this month\"\n"
+    "📈 **Financial results** — e.g. \"Companies with PAT growth above 20%\"\n"
+    "⚡ **Volume breakouts** — e.g. \"Breakout stocks in pharma last 14 days\"\n"
+    "🏭 **Sector news** — e.g. \"Latest railway sector announcements\"\n\n"
+    "Or use the **🔍 Screener** tab for instant pre-built filters — no typing needed!"
+)
+
 _VAGUE_REPLY = (
     "To find the right stocks, please tell me what you're looking for:\n\n"
     "📦 **Order wins** — e.g. \"Defence order wins above Rs.100 Cr this month\"\n"
@@ -614,6 +641,13 @@ async def chat(req: ChatRequest):
             yield f"data: {json.dumps({'type':'token','text':_VAGUE_REPLY})}\n\n"
             yield f"data: {json.dumps({'type':'done'})}\n\n"
         return StreamingResponse(_vague(), media_type="text/event-stream")
+
+    if _OFFTOPIC_RE.match(req.message.strip()):
+        async def _offtopic():
+            yield f"data: {json.dumps({'type':'meta','intent':'all','count':0,'sources':[]})}\n\n"
+            yield f"data: {json.dumps({'type':'token','text':_OFFTOPIC_REPLY})}\n\n"
+            yield f"data: {json.dumps({'type':'done'})}\n\n"
+        return StreamingResponse(_offtopic(), media_type="text/event-stream")
 
     def generate():
         msg = req.message.strip()

@@ -1027,7 +1027,7 @@ class LocalExtractor:
         """Call local Ollama with JSON mode — always local, never Groq."""
         try:
             import ollama as _ollama
-            _model = os.getenv("OLLAMA_MODEL", "llama3.1:latest")
+            _model = _os.getenv("OLLAMA_MODEL", "llama3.1:latest")
             resp = _ollama.chat(
                 model=_model,
                 messages=[{"role": "user", "content": prompt}],

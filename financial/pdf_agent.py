@@ -454,7 +454,11 @@ class PDFAgent:
         subjects = list(self._pdf_subjects.keys())
         placeholders = ",".join("?" * len(subjects))
         params: list[Any] = subjects[:]
-        clauses = [f"subject IN ({placeholders})", "attachment LIKE '%.pdf'"]
+        clauses = [
+            f"subject IN ({placeholders})",
+            "attachment LIKE '%.pdf'",
+            "NOT EXISTS (SELECT 1 FROM financial_results fr WHERE fr.source_url = attachment)",
+        ]
         if symbol:
             clauses.append("symbol = ?")
             params.append(symbol.upper())

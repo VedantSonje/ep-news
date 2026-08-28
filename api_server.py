@@ -397,7 +397,7 @@ async def breakouts(days: int = 14, sector: str = "", marketcap: str = ""):
         FROM volume_breakouts vb
         LEFT JOIN stock_sectors ss ON ss.symbol = vb.symbol
         {where_sql}
-        ORDER BY vb.signal_date DESC LIMIT 300
+        ORDER BY vb.signal_date DESC
     """, params).fetchall()
 
     enriched = []

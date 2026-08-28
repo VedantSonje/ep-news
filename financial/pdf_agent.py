@@ -25,6 +25,7 @@ from financial.models import ExtractionStatus, FinancialResult
 from financial.pdf_downloader import PDFDownloader
 from financial.statement_extractor import StatementStorage, extract_full_statement
 from financial.storage import FinancialStorage
+from enrichment.materiality import MaterialityExtractor
 from screener.filter_config import FilterConfig
 
 
@@ -150,11 +151,14 @@ class PDFAgent:
         summary = RunSummary(total_candidates=len(candidates))
 
         skipped_type = 0
+        _mat_extractor = MaterialityExtractor()
+        details_extracted = 0
         to_process: list[dict] = []
         for row in candidates:
             url  = row["attachment"] or ""
             sym  = row["symbol"]
             subj = row["subject"]
+            details = row.get("details") or ""
             extract_type = self._pdf_subjects.get(subj, "order_win")
 
             if not self._downloader.is_pdf_url(url):
@@ -163,8 +167,32 @@ class PDFAgent:
                 skipped_type += 1
             elif not reextract and self._already_stored(sym, url):
                 summary.skipped_done += 1
+            elif extract_type in ("order_win", "acquisition") and details:
+                # Try extracting order value directly from Details column — skips PDF download
+                mat = _mat_extractor.extract(subj, details, row.get("company", ""))
+                if mat.order_value_cr is not None:
+                    result = FinancialResult(
+                        symbol         = sym,
+                        company        = row.get("company", ""),
+                        period         = (row.get("broadcast_dt") or "")[:10],
+                        period_type    = extract_type,
+                        source_url     = url,
+                        broadcast_dt   = row.get("broadcast_dt") or "",
+                        order_value_cr = mat.order_value_cr,
+                        client_type    = "Government / PSU" if mat.government_linked else "Private sector",
+                        raw_summary    = details[:500],
+                        confidence     = "medium",
+                    )
+                    self._fin_storage.save(result)
+                    details_extracted += 1
+                    print(f"  [details] {sym}  {mat.order_value_cr:.0f}cr  (no PDF needed)", flush=True)
+                else:
+                    to_process.append(row)
             else:
                 to_process.append(row)
+
+        if details_extracted:
+            print(f"  Extracted from Details (no PDF): {details_extracted}")
 
         if summary.skipped_done:
             print(f"  Skipped (done): {summary.skipped_done}")
@@ -443,7 +471,7 @@ class PDFAgent:
         where = " AND ".join(clauses)
         lim   = f" LIMIT {limit}" if limit else ""
         sql = (
-            f"SELECT symbol, company, subject, attachment, broadcast_dt "
+            f"SELECT symbol, company, subject, attachment, broadcast_dt, details "
             f"FROM announcements WHERE {where} "
             f"ORDER BY broadcast_dt DESC{lim}"
         )

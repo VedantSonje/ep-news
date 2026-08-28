@@ -384,8 +384,10 @@ def _is_pl_table(table: list[list]) -> bool:
     # Require a date or period keyword in the header rows — prevents picking up
     # notes-to-accounts or segment tables which have "revenue" but no period header.
     has_period   = bool(_PL_DATE_RE.search(header_text))
-    has_structure = "particular" in body_text or (
-        "ebitda" in body_text and any(kw in body_text for kw in ["revenue", "profit", "pat"])
+    has_structure = (
+        "particular" in body_text
+        or ("income" in body_text and "expense" in body_text)  # INCOME / EXPENSES section headers
+        or ("ebitda" in body_text and any(kw in body_text for kw in ["revenue", "profit", "pat"]))
     )
     has_financial = any(kw in body_text for kw in [
         "revenue", "income", "profit", "loss", "sales", "expenditure", "ebitda"
@@ -480,7 +482,11 @@ def _extract_from_table(pl_table: list[list], unit_mult: float, period: str, bro
 def _is_pl_page(text: str) -> bool:
     """Quick check: does this page contain a P&L table?"""
     tl = text.lower()
-    has_particulars = "particular" in tl or "revenue from operation" in tl
+    has_particulars = (
+        "particular" in tl
+        or "revenue from operation" in tl
+        or ("income" in tl and "expense" in tl)  # INCOME / EXPENSES section headers
+    )
     has_financial   = any(kw in tl for kw in [
         "revenue from operations", "net profit", "profit before tax",
         "profit after tax", "net sales", "total income",

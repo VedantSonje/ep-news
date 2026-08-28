@@ -1041,7 +1041,12 @@
           <button class="pill"        id="brk-cap-mid"   onclick="setBrkCap('midcap')">Mid</button>
           <button class="pill"        id="brk-cap-large" onclick="setBrkCap('largecap')">Large</button>
         </div>
+        <input id="brk-symbol" class="brk-sector-input" placeholder="Filter symbol / name…" oninput="applyBrkFilters()" style="width:180px;" />
         <input id="brk-sector" class="brk-sector-input" placeholder="Filter sector…" oninput="debounceBrk()" />
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;">
+          <input type="checkbox" id="brk-positive-only" onchange="applyBrkFilters()" style="cursor:pointer;" />
+          Positive only
+        </label>
         <span class="res-count" id="brk-count"></span>
       </div>
 
@@ -1665,14 +1670,8 @@
       allThs[0].classList.remove('sort-asc','sort-desc');
       if (col === 'symbol') allThs[0].classList.add(s.dir === 1 ? 'sort-asc' : 'sort-desc');
     }
-    // Sort and re-render rows only (no fetch)
-    const sorted = [...window._brkData].sort((a, b) => {
-      const av = _brkVal(a, col), bv = _brkVal(b, col);
-      if (av < bv) return -s.dir;
-      if (av > bv) return  s.dir;
-      return 0;
-    });
-    _renderBrkRows(sorted);
+    // Sort and re-render rows only (no fetch) — respect active filters
+    applyBrkFilters();
   }
 
   function setBrkDays(d) {
@@ -1713,7 +1712,7 @@
       const res  = await fetch(url);
       const data = await res.json();
       window._brkData = data;
-      renderBreakoutsTable(data);
+      applyBrkFilters();
       window._breakoutsLoaded = true;
     } catch(e) {
       document.getElementById('brk-loading').style.display = 'none';
@@ -1725,7 +1724,16 @@
     earnings: '📊 Earnings', order: '📦 Order', announcement: '📋 Event',
   };
 
-  function renderBreakoutsTable(rows) {
+  function applyBrkFilters() {
+    const symQ      = (document.getElementById('brk-symbol')?.value || '').trim().toLowerCase();
+    const posOnly   = document.getElementById('brk-positive-only')?.checked;
+    let rows = window._brkData || [];
+    if (symQ)    rows = rows.filter(r => (r.symbol||'').toLowerCase().includes(symQ) || (r.company||'').toLowerCase().includes(symQ));
+    if (posOnly) rows = rows.filter(r => r.per_chg != null && r.per_chg >= 0);
+    renderBreakoutsTable(rows, true);
+  }
+
+  function renderBreakoutsTable(rows, skipFetch) {
     document.getElementById('brk-loading').style.display = 'none';
     const empty = document.getElementById('brk-empty');
     const table = document.getElementById('brk-table');

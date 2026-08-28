@@ -377,7 +377,7 @@ async def breakouts(days: int = 14, sector: str = "", marketcap: str = ""):
         return hit
     conn = _sqlite3.connect(str(cfg.db_path))
 
-    where, params = [], []
+    where, params = ["vb.source = 'hvy_breakout'"], []
     if days > 0:
         where.append(f"signal_date >= DATE('now', '-{int(days)} days')")
     if sector:
@@ -909,7 +909,7 @@ async def screen(filter_id: str):
     _ANN  = "symbol, company, subject, order_value_cr, sector_tags, broadcast_dt"
     _BRK  = ("vb.symbol, vb.company, vb.signal_date, vb.marketcap, "
              "COALESCE(vb.sector, ss.sector) as sector, vb.close, vb.per_chg, vb.volume")
-    _BFRM = "volume_breakouts vb LEFT JOIN stock_sectors ss ON ss.symbol = vb.symbol"
+    _BFRM = "(SELECT * FROM volume_breakouts WHERE source = 'hvy_breakout') vb LEFT JOIN stock_sectors ss ON ss.symbol = vb.symbol"
 
     FILTERS: dict[str, dict] = {
         # ── FINANCIALS ─────────────────────────────────────────────────────────

@@ -1028,7 +1028,7 @@ class ChatHandler:
     ) -> list[dict]:
         """Return volume breakout signals filtered by sector/cap/symbol/date."""
         conn   = sqlite3.connect(str(self._db_path))
-        where  = []
+        where  = ["source = 'hvy_breakout'"]
         params: list = []
         if symbol:
             where.append("symbol = ?");               params.append(symbol.upper())
@@ -1040,7 +1040,7 @@ class ChatHandler:
             where.append("signal_date >= ?");         params.append(str(from_dt))
         if to_dt:
             where.append("signal_date <= ?");         params.append(str(to_dt))
-        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        where_sql = "WHERE " + " AND ".join(where)
         rows = conn.execute(f"""
             SELECT symbol, signal_date, marketcap, sector
             FROM volume_breakouts

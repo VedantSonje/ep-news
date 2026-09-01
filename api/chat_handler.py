@@ -561,6 +561,9 @@ def _build_context(results: list[dict], intent: str, min_cr: float | None = None
             snip = r.get("_snippet", "")
             if snip and len(results) <= 15:
                 lines.append(f"   Detail      : {snip[:150]}")
+            src = r.get("source_url", "")
+            if src:
+                lines.append(f"   Source      : {src}")
 
     elif intent == "financials":
         ann_dates = sorted(set(str(r.get("broadcast_dt",""))[:10] for r in results if r.get("broadcast_dt")))
@@ -659,7 +662,10 @@ def _build_context(results: list[dict], intent: str, min_cr: float | None = None
             if snip:
                 after = snip[snip.find(".")+1:].strip()
                 if len(after) > 20:
-                    lines.append(f"   Detail  : {after[:250]}")
+                    lines.append(f"   Detail  : {after[:150]}")
+            src = r.get("source_url", "")
+            if src:
+                lines.append(f"   Source  : {src}")
 
     return "\n".join(lines)
 
@@ -968,7 +974,7 @@ class ChatHandler:
         if subj_list:
             ph = ",".join("?" * len(subj_list))
             sql = f"""
-                SELECT symbol, company, subject, details, broadcast_dt, score
+                SELECT symbol, company, subject, details, broadcast_dt, score, attachment
                 FROM announcements
                 WHERE DATE(broadcast_dt) BETWEEN ? AND ? AND subject IN ({ph})
                 ORDER BY score DESC, broadcast_dt DESC
@@ -977,7 +983,7 @@ class ChatHandler:
             params = (from_dt.isoformat(), to_dt.isoformat(), *subj_list, n)
         else:
             sql = """
-                SELECT symbol, company, subject, details, broadcast_dt, score
+                SELECT symbol, company, subject, details, broadcast_dt, score, attachment
                 FROM announcements
                 WHERE DATE(broadcast_dt) BETWEEN ? AND ?
                 ORDER BY score DESC, broadcast_dt DESC
@@ -991,6 +997,7 @@ class ChatHandler:
                 "symbol": r[0], "company": r[1] or "",
                 "subject": r[2] or "", "_snippet": r[3] or "",
                 "broadcast_dt": (r[4] or "")[:10], "score": r[5],
+                "source_url": r[6] or "",
             }
             for r in rows
         ]
@@ -1429,6 +1436,10 @@ class ChatHandler:
         for turn in history[-4:]:
             if turn.get("role") in ("user", "assistant") and turn.get("content"):
                 msgs.append({"role": turn["role"], "content": str(turn["content"])[:1000]})
+        # Truncate context to avoid HTTP 413 / context-window overflow on large result sets
+        _MAX_CTX = 6_000
+        if len(context) > _MAX_CTX:
+            context = context[:_MAX_CTX] + f"\n\n[... context truncated at {_MAX_CTX} chars — ask a narrower question for full detail]"
         # current question with fresh context
         msgs.append({
             "role": "user",

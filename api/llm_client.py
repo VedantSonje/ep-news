@@ -20,8 +20,15 @@ _OLLAMA_MODEL        = os.getenv("OLLAMA_MODEL",        "llama3.1:latest")
 class RateLimitError(RuntimeError):
     """All cloud providers returned 429 — surface to the caller for UX handling."""
 
-ACTIVE_PROVIDER = "groq" if _GROQ_API_KEY else "ollama"
-ACTIVE_MODEL    = _GROQ_MODEL if _GROQ_API_KEY else _OLLAMA_MODEL
+if _GROQ_API_KEY:
+    ACTIVE_PROVIDER = "groq"
+    ACTIVE_MODEL    = _GROQ_MODEL
+elif _OPENROUTER_API_KEY:
+    ACTIVE_PROVIDER = "openrouter"
+    ACTIVE_MODEL    = _OPENROUTER_MODEL
+else:
+    ACTIVE_PROVIDER = "ollama"
+    ACTIVE_MODEL    = _OLLAMA_MODEL
 
 
 def llm_complete(
@@ -32,6 +39,8 @@ def llm_complete(
     """Non-streaming LLM call — returns full response text."""
     if _GROQ_API_KEY:
         return _groq_complete(messages, temperature, max_tokens)
+    if _OPENROUTER_API_KEY:
+        return _openrouter_complete(messages, temperature, max_tokens) or _ollama_complete(messages, temperature)
     return _ollama_complete(messages, temperature)
 
 
@@ -55,18 +64,19 @@ def llm_json(
             response_format={"type": "json_object"},
         )
         return resp.choices[0].message.content or ""
-    else:
-        import ollama
-        resp = ollama.chat(
-            model=_OLLAMA_MODEL,
-            messages=[{"role": "user", "content": messages[-1]["content"]}],
-            format="json",
-            options={"temperature": temperature, "num_gpu": 99},
-        )
-        try:
-            return resp.message.content or ""
-        except AttributeError:
-            return resp["message"]["content"] or ""
+    if _OPENROUTER_API_KEY:
+        return _openrouter_complete(messages, temperature, max_tokens)
+    import ollama
+    resp = ollama.chat(
+        model=_OLLAMA_MODEL,
+        messages=[{"role": "user", "content": messages[-1]["content"]}],
+        format="json",
+        options={"temperature": temperature, "num_gpu": 99},
+    )
+    try:
+        return resp.message.content or ""
+    except AttributeError:
+        return resp["message"]["content"] or ""
 
 
 def llm_stream(
@@ -77,6 +87,8 @@ def llm_stream(
     """Streaming LLM call — yields tokens as they arrive."""
     if _GROQ_API_KEY:
         yield from _groq_stream(messages, temperature, max_tokens)
+    elif _OPENROUTER_API_KEY:
+        yield from _openrouter_stream(messages, temperature, max_tokens)
     else:
         yield from _ollama_stream(messages, temperature)
 

@@ -16,6 +16,7 @@ DB_PATH = "data/ep_news.db"
 FILES = [
     ("Backtest % change grt than 9.csv",                "pct_chg_gt9"),
     ("Backtest intraday range greater than 9 pct.csv",  "intraday_range_gt9"),
+    ("Backtest Copy - HVY @finallynitin (1).csv",       "hvy_breakout"),
 ]
 
 conn = sqlite3.connect(DB_PATH)

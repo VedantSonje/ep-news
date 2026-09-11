@@ -235,7 +235,14 @@ class VectorStore:
 
         path = Path(chroma_path)
         path.mkdir(parents=True, exist_ok=True)
-        self._client = chromadb.PersistentClient(path=str(path))
+        try:
+            self._client = chromadb.PersistentClient(path=str(path))
+        except Exception as _e:
+            import shutil
+            print(f"[VectorStore] ChromaDB open failed ({_e}) — wiping and recreating …", flush=True)
+            shutil.rmtree(path, ignore_errors=True)
+            path.mkdir(parents=True, exist_ok=True)
+            self._client = chromadb.PersistentClient(path=str(path))
         self._ann = self._client.get_or_create_collection(
             name=_ANN_COL,
             metadata={"hnsw:space": "cosine"},

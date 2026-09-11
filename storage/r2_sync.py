@@ -106,6 +106,8 @@ def upload(data_dir: Path) -> None:
 def download_if_needed(data_dir: Path) -> bool:
     """
     Download ep_news.db and chroma.tar.gz from R2 if data_dir is empty.
+    Set FORCE_R2_DOWNLOAD=1 to wipe existing data and re-download (fixes
+    ChromaDB format incompatibilities after version upgrades).
     Returns True if a download was performed, False otherwise.
     Called on Railway startup before the scheduler runs.
     """
@@ -115,6 +117,15 @@ def download_if_needed(data_dir: Path) -> bool:
 
     db_path    = data_dir / "ep_news.db"
     chroma_dir = data_dir / "chroma"
+
+    force = os.getenv("FORCE_R2_DOWNLOAD", "").strip() in ("1", "true", "yes")
+    if force and (db_path.exists() or chroma_dir.exists()):
+        print("[r2] FORCE_R2_DOWNLOAD=1 — wiping stale data before re-download …", flush=True)
+        import shutil
+        if chroma_dir.exists():
+            shutil.rmtree(chroma_dir)
+        if db_path.exists():
+            db_path.unlink()
 
     if db_path.exists() and chroma_dir.exists():
         return False  # already have data

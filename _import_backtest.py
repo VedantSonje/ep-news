@@ -14,9 +14,12 @@ from pathlib import Path
 DB_PATH = "data/ep_news.db"
 
 FILES = [
-    ("Backtest % change grt than 9.csv",                "pct_chg_gt9"),
-    ("Backtest intraday range greater than 9 pct.csv",  "intraday_range_gt9"),
-    ("Backtest Copy - HVY @finallynitin (1).csv",       "hvy_breakout"),
+    ("Backtest % change grt than 9.csv",                   "pct_chg_gt9"),
+    ("Backtest intraday range greater than 9 pct.csv",     "intraday_range_gt9"),
+    ("Backtest Copy - HVY @finallynitin (1).csv",          "hvy_breakout"),
+    ("Backtest Copy - HVY @finallynitin (2).csv",          "hvy_breakout_v2"),
+    ("Backtest % change grt than 9 (1).csv",               "pct_chg_gt9_v2"),
+    ("Backtest intraday range greater than 9 pct (1).csv", "intraday_range_gt9_v2"),
 ]
 
 conn = sqlite3.connect(DB_PATH)

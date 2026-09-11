@@ -253,18 +253,24 @@ class VectorStore:
         )
         self._ann_bm25 = _BM25Index()
         self._fin_bm25 = _BM25Index()
-        self._build_bm25_indexes()
+        self._bm25_ready = False  # built lazily on first search, not at startup
 
     # ── BM25 index management ─────────────────────────────────────────────────
 
     def _build_bm25_indexes(self) -> None:
-        """Load all docs from ChromaDB and build BM25 indexes. Called at startup."""
+        """Load all docs from ChromaDB and build BM25 indexes."""
         if self._ann.count() > 0:
             data = self._ann.get(include=["documents", "metadatas"])
             self._ann_bm25.build(data["ids"], data["documents"], data["metadatas"])
         if self._fin.count() > 0:
             data = self._fin.get(include=["documents", "metadatas"])
             self._fin_bm25.build(data["ids"], data["documents"], data["metadatas"])
+        self._bm25_ready = True
+
+    def _ensure_bm25(self) -> None:
+        """Build BM25 indexes on first use (lazy — avoids loading 25k docs at startup)."""
+        if not self._bm25_ready:
+            self._build_bm25_indexes()
 
     def rebuild_bm25(self) -> None:
         """Explicit rebuild — call after bulk upserts (e.g. post-backfill)."""
@@ -621,6 +627,7 @@ class VectorStore:
         where:     dict | None,
         n:         int,
     ) -> list[dict]:
+        self._ensure_bm25()  # lazy-build BM25 on first search
         total = col.count()
         if total == 0:
             return []

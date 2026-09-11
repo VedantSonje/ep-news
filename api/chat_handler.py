@@ -686,18 +686,24 @@ class ChatHandler:
     ]
 
     def __init__(self, chroma_path: Path | str, db_path: Path | str) -> None:
+        import sys
+        print("[ChatHandler] step 1/5: VectorStore …", flush=True)
         self._store      = VectorStore(chroma_path)
         self._db_path    = Path(db_path)
+        print("[ChatHandler] step 2/5: QueryClassifier …", flush=True)
         self._classifier = QueryClassifier()
-        self._reranker   = Reranker()   # warms up CrossEncoder on startup
-        # Cache known symbols + company-name → symbol index for query expansion
+        print("[ChatHandler] step 3/5: Reranker …", flush=True)
+        self._reranker   = Reranker()
+        print("[ChatHandler] step 4/5: symbol index …", flush=True)
         _conn = sqlite3.connect(str(self._db_path))
         self._known_symbols: set[str] = {
             r[0] for r in _conn.execute("SELECT DISTINCT symbol FROM announcements").fetchall()
         }
         self._name_to_symbol: dict[str, str] = _build_name_to_symbol(_conn)
         _conn.close()
+        print("[ChatHandler] step 5/5: retrieval graph …", flush=True)
         self._graph = build_retrieval_graph(self)
+        print("[ChatHandler] init complete.", flush=True)
 
     def _extract_company_symbol(self, text: str) -> str | None:
         """

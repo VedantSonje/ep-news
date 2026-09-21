@@ -934,6 +934,7 @@
       <button class="tab-btn" id="tab-results" onclick="switchTab('results')">📈 Results</button>
       <button class="tab-btn" id="tab-breakouts" onclick="switchTab('breakouts')">⚡ Breakouts</button>
       <button class="tab-btn" id="tab-watchlist" onclick="switchTab('watchlist')">⭐ Watchlist</button>
+      <button class="tab-btn" id="tab-trending" onclick="switchTab('trending')">📈 Trending</button>
       <button class="tab-btn" id="tab-screener" onclick="switchTab('screener')">🔍 Screener</button>
     </div>
 
@@ -1080,6 +1081,63 @@
             </tr>
           </thead>
           <tbody id="brk-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Trending Stocks view -->
+    <div id="trending-view" style="display:none; flex:1; flex-direction:column; min-height:0;">
+      <div class="brk-controls">
+        <div class="filter-pills">
+          <button class="pill active" id="trn-pill-14" onclick="setTrnDays(14)">14 days</button>
+          <button class="pill"        id="trn-pill-30" onclick="setTrnDays(30)">30 days</button>
+          <button class="pill"        id="trn-pill-0"  onclick="setTrnDays(0)">All time</button>
+        </div>
+        <span class="sort-label" style="margin-left:8px;">Cap</span>
+        <div class="filter-pills">
+          <button class="pill active" id="trn-cap-all"   onclick="setTrnCap('')">All</button>
+          <button class="pill"        id="trn-cap-small" onclick="setTrnCap('smallcap')">Small</button>
+          <button class="pill"        id="trn-cap-mid"   onclick="setTrnCap('midcap')">Mid</button>
+          <button class="pill"        id="trn-cap-large" onclick="setTrnCap('largecap')">Large</button>
+        </div>
+        <input id="trn-symbol" class="brk-sector-input" placeholder="Filter symbol / name…" oninput="applyTrnFilters()" style="width:180px;" />
+        <input id="trn-sector" class="brk-sector-input" placeholder="Filter sector…" oninput="debounceTrn()" />
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;">
+          <input type="checkbox" id="trn-positive-only" onchange="applyTrnFilters()" style="cursor:pointer;" />
+          Positive only
+        </label>
+        <span class="res-count" id="trn-count"></span>
+      </div>
+
+      <div class="brk-summary" id="trn-legend" style="display:none;">
+        <span><span class="reason-chip reason-earnings">📊 Earnings</span> quarterly result near signal</span>
+        <span><span class="reason-chip reason-order">📦 Order</span> order win near signal</span>
+        <span><span class="reason-chip reason-announcement">📋 Event</span> other BSE/NSE filing</span>
+        <span><span class="reason-none">— no DB match</span> not in our DB (web news / technicals)</span>
+      </div>
+
+      <div class="brk-body">
+        <div id="trn-loading" class="cmp-empty" style="display:none">
+          <span class="cmp-icon">⏳</span>Loading trending stocks…
+        </div>
+        <div id="trn-empty" style="display:none" class="cmp-empty">
+          <span class="cmp-icon">📈</span>No trending stocks found for this filter.
+        </div>
+        <table class="brk-table" id="trn-table" style="display:none;">
+          <thead>
+            <tr>
+              <th class="sortable" style="text-align:left" onclick="sortTrn('symbol')">Symbol</th>
+              <th style="text-align:left">Company</th>
+              <th class="sortable sort-desc" id="trn-th-signal_date" onclick="sortTrn('signal_date')">Signal Date</th>
+              <th class="sortable" id="trn-th-marketcap" onclick="sortTrn('marketcap')">Cap</th>
+              <th class="sortable" style="text-align:left" id="trn-th-sector" onclick="sortTrn('sector')">Sector</th>
+              <th class="sortable" id="trn-th-close" onclick="sortTrn('close')" style="text-align:right">Close</th>
+              <th class="sortable" id="trn-th-per_chg" onclick="sortTrn('per_chg')" style="text-align:right">Chg%</th>
+              <th class="sortable" style="text-align:left" id="trn-th-reason_type" onclick="sortTrn('reason_type')">Reason</th>
+              <th class="sortable" id="trn-th-reason_date" onclick="sortTrn('reason_date')">Event Date</th>
+            </tr>
+          </thead>
+          <tbody id="trn-tbody"></tbody>
         </table>
       </div>
     </div>
@@ -1802,6 +1860,142 @@
     openInvestigation(symbol, signalDate, sector, marketcap);
   }
 
+  // ── Trending Stocks tab ────────────────────────────────────────────────────
+  window._trnData   = [];
+  window._trnSort   = { col: 'signal_date', dir: -1 };
+  window._trnDays   = 14;
+  window._trnCap    = '';
+  window._trendingLoaded = false;
+  let _trnTimer = null;
+
+  function setTrnDays(d) {
+    window._trnDays = d;
+    ['14','30','0'].forEach(x =>
+      document.getElementById('trn-pill-' + x).classList.toggle('active', String(x) === String(d)));
+    loadTrending();
+  }
+
+  function setTrnCap(cap) {
+    window._trnCap = cap;
+    ['all','small','mid','large'].forEach(x =>
+      document.getElementById('trn-cap-' + x).classList.toggle('active', x === (cap || 'all')));
+    loadTrending();
+  }
+
+  function debounceTrn() {
+    clearTimeout(_trnTimer);
+    _trnTimer = setTimeout(loadTrending, 350);
+  }
+
+  async function loadTrending() {
+    const sector = (document.getElementById('trn-sector')?.value || '').trim();
+    const days   = window._trnDays;
+    const cap    = window._trnCap;
+
+    document.getElementById('trn-loading').style.display = '';
+    document.getElementById('trn-empty').style.display   = 'none';
+    document.getElementById('trn-table').style.display   = 'none';
+    document.getElementById('trn-legend').style.display  = 'none';
+    document.getElementById('trn-count').textContent     = '';
+
+    try {
+      let url = `/api/trending?days=${days}`;
+      if (cap)    url += `&marketcap=${encodeURIComponent(cap)}`;
+      if (sector) url += `&sector=${encodeURIComponent(sector)}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      window._trnData = data;
+      applyTrnFilters();
+      window._trendingLoaded = true;
+    } catch(e) {
+      document.getElementById('trn-loading').style.display = 'none';
+      console.warn('trending error', e);
+    }
+  }
+
+  function applyTrnFilters() {
+    const symQ    = (document.getElementById('trn-symbol')?.value || '').trim().toLowerCase();
+    const posOnly = document.getElementById('trn-positive-only')?.checked;
+    let rows = window._trnData || [];
+    if (symQ)    rows = rows.filter(r => (r.symbol||'').toLowerCase().includes(symQ) || (r.company||'').toLowerCase().includes(symQ));
+    if (posOnly) rows = rows.filter(r => r.per_chg != null && r.per_chg >= 0);
+    renderTrendingTable(rows);
+  }
+
+  function sortTrn(col) {
+    const s = window._trnSort;
+    s.dir = (s.col === col) ? -s.dir : -1;
+    s.col = col;
+    const sortableCols = ['symbol','signal_date','marketcap','sector','reason_type','reason_date'];
+    sortableCols.forEach(c => {
+      const th = document.getElementById('trn-th-' + c);
+      if (!th) return;
+      th.classList.remove('sort-asc','sort-desc');
+      if (c === col) th.classList.add(s.dir === 1 ? 'sort-asc' : 'sort-desc');
+    });
+    applyTrnFilters();
+  }
+
+  function renderTrendingTable(rows) {
+    document.getElementById('trn-loading').style.display = 'none';
+    const empty = document.getElementById('trn-empty');
+    const table = document.getElementById('trn-table');
+    document.getElementById('trn-count').textContent = rows.length + ' stocks';
+
+    if (!rows.length) {
+      document.getElementById('trn-tbody').innerHTML = '';
+      empty.style.display = '';
+      table.style.display = 'none';
+      return;
+    }
+
+    empty.style.display = 'none';
+    table.style.display = '';
+    document.getElementById('trn-legend').style.display = '';
+
+    const s = window._trnSort;
+    const sorted = [...rows].sort((a, b) => {
+      const av = _brkVal(a, s.col), bv = _brkVal(b, s.col);
+      if (av < bv) return -s.dir;
+      if (av > bv) return  s.dir;
+      return 0;
+    });
+
+    document.getElementById('trn-tbody').innerHTML = sorted.map(r => {
+      const cap     = (r.marketcap || '').toLowerCase();
+      const capChip = cap
+        ? `<span class="cap-chip cap-${escHtml(cap)}">${escHtml(r.marketcap)}</span>`
+        : '<span style="color:var(--muted)">—</span>';
+
+      let reasonHtml;
+      if (r.reason_type) {
+        const chipCls   = 'reason-' + r.reason_type;
+        const chipLabel = BRK_REASON_LABEL[r.reason_type] || r.reason_type;
+        const txt       = (r.reason_text || '').slice(0, 100) + (r.reason_text?.length > 100 ? '…' : '');
+        reasonHtml = `<span class="reason-chip ${escHtml(chipCls)}">${chipLabel}</span>${escHtml(txt)}`;
+      } else {
+        reasonHtml = `<span class="reason-none">— no DB match</span>`;
+      }
+
+      const closeStr = r.close   != null ? Number(r.close).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) : '<span style="color:var(--muted)">—</span>';
+      const chgStr   = r.per_chg != null ? r.per_chg.toFixed(2) + '%' : '<span style="color:var(--muted)">—</span>';
+      const chgCls   = r.per_chg == null ? '' : r.per_chg >= 0 ? 'growth-pos' : 'growth-neg';
+      const chgArrow = r.per_chg == null ? '' : r.per_chg >= 0 ? '▲' : '▼';
+
+      return `<tr onclick="openInvestigation('${escHtml(r.symbol)}','${escHtml(r.signal_date||'')}','${escHtml(r.sector||'')}','${escHtml(r.marketcap||'')}')">
+        <td class="sym">${escHtml(r.symbol)}</td>
+        <td class="co">${escHtml(r.company)}</td>
+        <td class="dt">${escHtml(r.signal_date || '')}</td>
+        <td style="text-align:center">${capChip}</td>
+        <td class="sect">${escHtml(r.sector || '')}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${closeStr}</td>
+        <td style="text-align:right" class="${chgCls}">${chgArrow}${chgStr}</td>
+        <td class="rsn">${reasonHtml}</td>
+        <td class="dt">${escHtml(r.reason_date || '—')}</td>
+      </tr>`;
+    }).join('');
+  }
+
   // ── Investigation panel ────────────────────────────────────────────────────
   let _invReader   = null;   // active SSE reader
   let _invSymbol   = '';
@@ -2028,7 +2222,7 @@
 
   // ── Tab switching ─────────────────────────────────────────────────────────
   function switchTab(tab) {
-    ['chat','results','breakouts','watchlist','screener'].forEach(t => {
+    ['chat','results','breakouts','trending','watchlist','screener'].forEach(t => {
       document.getElementById(t + '-view').style.display = 'none';
       document.getElementById('tab-' + t).classList.remove('active');
     });
@@ -2037,6 +2231,7 @@
     if (tab === 'results'   && !window._resultsLoaded)    loadResults();
     if (tab === 'results'   && !window._symbolsLoaded)    loadSymbols();
     if (tab === 'breakouts' && !window._breakoutsLoaded)  loadBreakouts();
+    if (tab === 'trending'  && !window._trendingLoaded)   loadTrending();
     if (tab === 'watchlist')                               loadWatchlist();
     if (tab === 'screener'  && !window._scrInited)        initScreener();
   }

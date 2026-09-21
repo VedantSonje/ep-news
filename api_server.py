@@ -478,6 +478,113 @@ async def breakouts(days: int = 14, sector: str = "", marketcap: str = ""):
     return enriched
 
 
+@app.get("/api/trending")
+async def trending(days: int = 14, sector: str = "", marketcap: str = ""):
+    """Trending stocks signals enriched with nearest DB reason."""
+    ck = f"trending:{days}:{sector}:{marketcap}"
+    hit = _c_get(ck)
+    if hit is not None:
+        return hit
+    conn = _sqlite3.connect(str(cfg.db_path))
+
+    where, params = [], []
+    if days > 0:
+        where.append(f"ts.signal_date >= DATE('now', '-{int(days)} days')")
+    if sector:
+        where.append("LOWER(COALESCE(ts.sector, ss.sector)) LIKE ?")
+        params.append(f"%{sector.lower()}%")
+    if marketcap and marketcap != "all":
+        where.append("LOWER(ts.marketcap) = ?")
+        params.append(marketcap.lower())
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    rows = conn.execute(f"""
+        SELECT ts.symbol, ts.signal_date,
+               ts.marketcap,
+               COALESCE(ts.sector, ss.sector) as sector,
+               ts.close, ts.per_chg, ts.volume,
+               ts.company
+        FROM trending_stocks ts
+        LEFT JOIN stock_sectors ss ON ss.symbol = ts.symbol
+        {where_sql}
+        ORDER BY ts.signal_date DESC
+    """, params).fetchall()
+
+    enriched = []
+    for symbol, signal_date, mktcap, sec, close, per_chg, vol, co_csv in rows:
+        fin = conn.execute("""
+            SELECT period, revenue_cr, pat_cr, pat_growth_pct, broadcast_dt, company
+            FROM financial_results
+            WHERE symbol = ?
+              AND period_type NOT IN
+                ('order_win','acquisition','restructuring','credit_rating',
+                 'cirp','fundraising','buyback','open_offer')
+              AND DATE(broadcast_dt) BETWEEN DATE(?, '-5 days') AND DATE(?, '+5 days')
+            ORDER BY ABS(JULIANDAY(broadcast_dt) - JULIANDAY(?)) LIMIT 1
+        """, (symbol, signal_date, signal_date, signal_date)).fetchone()
+
+        ord_ann = conn.execute("""
+            SELECT subject, company, broadcast_dt, order_value_cr
+            FROM announcements
+            WHERE symbol = ? AND LOWER(subject) LIKE '%order%'
+              AND DATE(broadcast_dt) BETWEEN DATE(?, '-5 days') AND DATE(?, '+5 days')
+            ORDER BY ABS(JULIANDAY(broadcast_dt) - JULIANDAY(?)) LIMIT 1
+        """, (symbol, signal_date, signal_date, signal_date)).fetchone()
+
+        any_ann = conn.execute("""
+            SELECT subject, company, broadcast_dt
+            FROM announcements
+            WHERE symbol = ?
+              AND DATE(broadcast_dt) BETWEEN DATE(?, '-5 days') AND DATE(?, '+5 days')
+            ORDER BY ABS(JULIANDAY(broadcast_dt) - JULIANDAY(?)) LIMIT 1
+        """, (symbol, signal_date, signal_date, signal_date)).fetchone()
+
+        reason_type = reason_text = reason_date = company = None
+
+        if fin:
+            period, rev, pat, pat_g, fin_dt, co = fin
+            reason_type = "earnings"
+            company = co
+            parts = []
+            if rev and rev > 0: parts.append(f"Rev ₹{rev:,.0f}Cr")
+            if pat: parts.append(f"PAT ₹{pat:,.0f}Cr")
+            if pat_g and pat_g > -900:
+                parts.append(f"{'+' if pat_g > 0 else ''}{pat_g:.1f}% YoY")
+            reason_text = (f"{period} | " if period else "") + " · ".join(parts)
+            reason_date = (fin_dt or "")[:10]
+        elif ord_ann:
+            subj, co, ann_dt, oval = ord_ann
+            reason_type = "order"
+            company = co
+            val_str = f" — ₹{oval:,.0f}Cr" if oval and oval > 0 else ""
+            reason_text = (subj or "Order Win") + val_str
+            reason_date = (ann_dt or "")[:10]
+        elif any_ann:
+            subj, co, ann_dt = any_ann
+            reason_type = "announcement"
+            company = co
+            reason_text = subj or "Announcement"
+            reason_date = (ann_dt or "")[:10]
+
+        enriched.append({
+            "symbol":      symbol,
+            "signal_date": signal_date,
+            "marketcap":   mktcap or "",
+            "sector":      sec or "",
+            "company":     company or co_csv or "",
+            "close":       close,
+            "per_chg":     per_chg,
+            "volume":      vol,
+            "reason_type": reason_type,
+            "reason_text": reason_text,
+            "reason_date": reason_date,
+        })
+
+    conn.close()
+    _c_set(ck, enriched, ttl=300)
+    return enriched
+
+
 @app.get("/api/brief")
 async def get_brief(date: str = ""):
     """Return the latest stored daily brief (or today's by date param)."""
